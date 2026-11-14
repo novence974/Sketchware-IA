@@ -1,6 +1,10 @@
 name: Build installable APK
 
 on:
+  # workflow_dispatch only works from the default branch, so pushing any commit
+  # to build/apk is the way to ask for a build from a branch that is not merged.
+  push:
+    branches: ["build/apk"]
   workflow_dispatch:
     inputs:
       tag:
