@@ -78,7 +78,7 @@ public class Game3DEditorActivity extends BaseAppCompatActivity {
     }
 
     @Override
-    protected void onCreate(@Nullable Bundle savedInstanceState) {
+    public void onCreate(@Nullable Bundle savedInstanceState) {
         enableEdgeToEdgeNoContrast();
         super.onCreate(savedInstanceState);
         binding = ActivityGame3dEditorBinding.inflate(getLayoutInflater());
@@ -578,7 +578,7 @@ public class Game3DEditorActivity extends BaseAppCompatActivity {
     }
 
     @Override
-    protected void onPause() {
+    public void onPause() {
         super.onPause();
         if (viewport != null) {
             viewport.onPause();
@@ -591,7 +591,7 @@ public class Game3DEditorActivity extends BaseAppCompatActivity {
     }
 
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
         if (viewport != null) {
             viewport.onResume();
