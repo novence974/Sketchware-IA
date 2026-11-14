@@ -574,6 +574,11 @@ public class Game3DEditorActivity extends BaseAppCompatActivity {
 
     @Override
     public void onBackPressed() {
+        if (!dirty) {
+            // Let the framework handle back so predictive back keeps working.
+            super.onBackPressed();
+            return;
+        }
         confirmExit();
     }
 
