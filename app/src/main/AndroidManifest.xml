@@ -67,6 +67,13 @@
             android:label="@string/title_activity_icon_creator"
             android:theme="@style/Theme.SketchwarePro" />
 
+        <activity
+            android:name=".activities.game3d.ui.Game3DEditorActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:label="@string/project_type_game_3d" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.provider"

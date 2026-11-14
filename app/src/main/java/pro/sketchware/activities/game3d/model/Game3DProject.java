@@ -42,6 +42,15 @@ public class Game3DProject {
         }
     }
 
+    /** A project that already has something in it, for a brand new game. */
+    public static Game3DProject createDefault(String scId) {
+        Game3DProject project = new Game3DProject();
+        project.scId = scId == null ? "" : scId;
+        project.scenes.add(Game3DScene.createStarter("Scene 1"));
+        project.ensureInitialized(project.scId);
+        return project;
+    }
+
     public Game3DScene findScene(String sceneId) {
         if (sceneId == null) return null;
         for (Game3DScene scene : scenes) {

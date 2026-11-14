@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_undo"
+        android:icon="@drawable/ic_mtrl_undo"
+        android:title="@string/game_engine_action_undo"
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/action_redo"
+        android:icon="@drawable/ic_mtrl_redo"
+        android:title="@string/game_engine_action_redo"
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/action_save"
+        android:icon="@drawable/ic_mtrl_save"
+        android:title="@string/game_engine_action_save"
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/action_scenes"
+        android:title="@string/game3d_menu_scenes"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_scene_settings"
+        android:title="@string/game3d_menu_scene_settings"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_toggle_culling"
+        android:checkable="true"
+        android:title="@string/game3d_menu_backface_culling"
+        app:showAsAction="never" />
+</menu>
