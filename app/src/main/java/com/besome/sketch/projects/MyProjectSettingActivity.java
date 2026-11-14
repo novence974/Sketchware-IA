@@ -204,7 +204,8 @@ public class MyProjectSettingActivity extends BaseAppCompatActivity implements V
             if (isAndroidStudioProject()) {
                 binding.toolbar.setTitle("New Android Studio Project");
             } else if (isGameProject()) {
-                binding.toolbar.setTitle(R.string.project_type_game_2d);
+                binding.toolbar.setTitle(isGame3DProject()
+                        ? R.string.project_type_game_3d : R.string.project_type_game_2d);
             }
             originalPackageName = newProjectPackageName;
             binding.etPackageName.setText(newProjectPackageName);
@@ -626,11 +627,19 @@ public class MyProjectSettingActivity extends BaseAppCompatActivity implements V
         if (RecentProjectsRegistry.PROJECT_KIND_GAME_2D.equals(value)) {
             return RecentProjectsRegistry.PROJECT_KIND_GAME_2D;
         }
+        if (RecentProjectsRegistry.PROJECT_KIND_GAME_3D.equals(value)) {
+            return RecentProjectsRegistry.PROJECT_KIND_GAME_3D;
+        }
         return RecentProjectsRegistry.PROJECT_KIND_SKETCHWARE;
     }
 
     private boolean isGameProject() {
-        return RecentProjectsRegistry.PROJECT_KIND_GAME_2D.equals(projectKind);
+        return RecentProjectsRegistry.PROJECT_KIND_GAME_2D.equals(projectKind)
+                || RecentProjectsRegistry.PROJECT_KIND_GAME_3D.equals(projectKind);
+    }
+
+    private boolean isGame3DProject() {
+        return RecentProjectsRegistry.PROJECT_KIND_GAME_3D.equals(projectKind);
     }
 
     private boolean isAndroidStudioProject() {

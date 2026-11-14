@@ -20,6 +20,7 @@ public class RecentProjectsRegistry {
     public static final String PROJECT_KIND_SKETCHWARE = "sketchware";
     public static final String PROJECT_KIND_ANDROID_STUDIO = "android_studio";
     public static final String PROJECT_KIND_GAME_2D = "game_2d";
+    public static final String PROJECT_KIND_GAME_3D = "game_3d";
     // Lazily shared store handle, touched from several threads (activities, data reset).
     public static volatile PreferenceStore a;
 
@@ -330,6 +331,10 @@ public class RecentProjectsRegistry {
 
     public static boolean isGameProject(HashMap<String, Object> projectMap) {
         return PROJECT_KIND_GAME_2D.equals(MapValueUtils.c(projectMap, PROJECT_KIND_KEY));
+    }
+
+    public static boolean isGame3DProject(HashMap<String, Object> projectMap) {
+        return PROJECT_KIND_GAME_3D.equals(MapValueUtils.c(projectMap, PROJECT_KIND_KEY));
     }
 
     public static String c() {
