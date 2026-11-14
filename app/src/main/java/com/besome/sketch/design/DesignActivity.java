@@ -135,7 +135,6 @@ import mod.jbk.diagnostic.MissingFileException;
 import mod.jbk.util.LogUtil;
 import mod.khaled.logcat.LogReaderActivity;
 import pro.sketchware.R;
-import pro.sketchware.utility.AdManager;
 import pro.sketchware.activities.appcompat.ManageAppCompatActivity;
 import pro.sketchware.activities.editor.command.ManageXMLCommandActivity;
 import pro.sketchware.activities.editor.view.CodeViewerActivity;
@@ -655,7 +654,6 @@ public class DesignActivity extends BaseAppCompatActivity implements View.OnClic
             registerReceiver(buildCancelReceiver, filter);
         }
 
-        AdManager.loadBanner(this, findViewById(R.id.ad_container));
     }
 
     private boolean isDebugApkExists() {

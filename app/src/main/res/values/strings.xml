@@ -3502,8 +3502,7 @@ Please try again later"</string>
     <string name='template_author_credit' translatable='false'>Made by Fabio Silva</string>
     <string name="template_format_studio">Android Studio · Java and XML</string>
     <string name="template_format_sketchware">Sketchware · Visual blocks</string>
-    <string name="template_unlock_message">%1$s\n\nWatch the video to the end to unlock this template. Your editable copy will appear in Projects.</string>
-    <string name="template_watch_video">Watch the video</string>
+    <string name="template_unlock_message">%1$s\n\nAn editable copy of this template will appear in Projects.</string>
 
     <!-- Game Engine 2D -->
     <string name="game_engine_tab_scene">Scene &amp; UI</string>

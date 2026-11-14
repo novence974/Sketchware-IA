@@ -22,7 +22,6 @@ import pro.sketchware.editor.EditorViewUtils;
 import pro.sketchware.filemanagers.SoundResourcePickerFragment;
 import pro.sketchware.R;
 import pro.sketchware.databinding.ManageSoundBinding;
-import pro.sketchware.utility.AdManager;
 import pro.sketchware.utility.TranslationFunction;
 
 public class ManageSoundActivity extends BaseAppCompatActivity implements ViewPager.OnPageChangeListener {
@@ -80,8 +79,6 @@ public class ManageSoundActivity extends BaseAppCompatActivity implements ViewPa
         binding.viewPager.setOffscreenPageLimit(TAB_COUNT);
         binding.viewPager.addOnPageChangeListener(this);
         binding.tabLayout.setupWithViewPager(binding.viewPager);
-        AdManager.loadBanner(this, binding.adContainer);
-        AdManager.keepAboveBanner((View) binding.fab.getParent(), binding.adContainer);
     }
 
     @Override

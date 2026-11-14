@@ -2592,8 +2592,7 @@
     <string name="axion_search_providers">ابحث في المزوّدين…</string>
     <string name="template_format_studio">Android Studio · Java وXML</string>
     <string name="template_format_sketchware">Sketchware · بلوكات مرئية</string>
-    <string name="template_unlock_message">%1$s\n\nشاهد الفيديو حتى النهاية لفتح هذا النموذج. وستظهر نسختك القابلة للتحرير في المشاريع.</string>
-    <string name="template_watch_video">مشاهدة الفيديو</string>
+    <string name="template_unlock_message">%1$s\n\nستظهر نسخة قابلة للتحرير من هذا النموذج في المشاريع.</string>
     <string name="game_engine_tab_scene">المشهد والواجهة</string>
     <string name="game_engine_tab_blocks">البلوكات</string>
     <string name="game_engine_action_undo">تراجع</string>

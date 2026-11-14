@@ -49,7 +49,6 @@ import pro.sketchware.activities.game.GameEngineActivity;
 import pro.sketchware.activities.main.activities.MainActivity;
 import pro.sketchware.databinding.MyprojectsBinding;
 import pro.sketchware.databinding.SortProjectDialogBinding;
-import pro.sketchware.utility.AdManager;
 import pro.sketchware.utility.UI;
 
 public class ProjectsFragment extends StoragePermissionFragment implements pro.sketchware.activities.main.MainSearchable {
@@ -240,9 +239,6 @@ public class ProjectsFragment extends StoragePermissionFragment implements pro.s
 
         requireActivity().addMenuProvider(menuProvider, getViewLifecycleOwner(), androidx.lifecycle.Lifecycle.State.RESUMED);
 
-        if (getActivity() != null) {
-            AdManager.loadBanner(requireActivity(), binding.adContainer);
-        }
     }
 
     private void showNewProjectTypeDialog() {

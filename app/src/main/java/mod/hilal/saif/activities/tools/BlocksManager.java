@@ -178,7 +178,6 @@ public class BlocksManager extends BaseAppCompatActivity {
 
         itemTouchHelper.attachToRecyclerView(binding.paletteRecycler);
 
-        pro.sketchware.utility.AdManager.loadBanner(this, binding.adContainer);
     }
 
     @Override

@@ -36,7 +36,6 @@ import mod.jbk.diagnostic.CompileErrorSaver;
 import pro.sketchware.R;
 import pro.sketchware.databinding.CompileLogBinding;
 import pro.sketchware.utility.SketchwareUtil;
-import pro.sketchware.utility.AdManager;
 import pro.sketchware.chat.AiProviderService;
 import io.noties.markwon.Markwon;
 import android.os.Environment;
@@ -108,7 +107,6 @@ public class CompileLogActivity extends BaseAppCompatActivity {
         applyLogViewerPreferences();
         setErrorText();
 
-        AdManager.loadBanner(this, binding.adContainer);
     }
 
     private void clearLog() {
