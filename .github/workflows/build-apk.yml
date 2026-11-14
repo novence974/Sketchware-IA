@@ -46,15 +46,14 @@ jobs:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          # L8 needs more heap than the project default of 2 GB, and D8 recurses
-          # deeply over the source-generator classes, which are built from very
-          # long string-concatenation chains: the default 1 MB stack overflows.
-          GRADLE_OPTS: >-
-            -Dorg.gradle.jvmargs=-Xmx5g
-            -Xss16m
-            -Dfile.encoding=UTF-8
-            -XX:+UseParallelGC
         run: |
+          set -euo pipefail
+          # gradle.properties wins over GRADLE_OPTS, so the CI-only limits are
+          # written into it: L8 needs more heap than the desktop default of
+          # 2.5 GB, and D8 overflows the default 1 MB thread stack on this
+          # project. The desktop defaults are deliberately left alone in git.
+          sed -i 's|^org\.gradle\.jvmargs=.*|org.gradle.jvmargs=-Xmx5g -Xss32m -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8 -XX:+UseParallelGC|' gradle.properties
+          grep '^org\.gradle\.jvmargs=' gradle.properties
           chmod +x ./gradlew
           ./gradlew --no-daemon --max-workers=1 assembleRelease
 
