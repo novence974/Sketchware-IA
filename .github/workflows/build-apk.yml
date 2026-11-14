@@ -46,8 +46,14 @@ jobs:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          # L8 needs more heap than the project default of 2 GB.
-          GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx5g -Dfile.encoding=UTF-8 -XX:+UseParallelGC
+          # L8 needs more heap than the project default of 2 GB, and D8 recurses
+          # deeply over the source-generator classes, which are built from very
+          # long string-concatenation chains: the default 1 MB stack overflows.
+          GRADLE_OPTS: >-
+            -Dorg.gradle.jvmargs=-Xmx5g
+            -Xss16m
+            -Dfile.encoding=UTF-8
+            -XX:+UseParallelGC
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon --max-workers=1 assembleRelease
