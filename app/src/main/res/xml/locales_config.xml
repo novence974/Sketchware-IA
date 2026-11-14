@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Languages this app ships translations for. Android 13+ reads this to list
+  Sketchware IA under Settings > System > Languages, and AppCompat reads it
+  for the in-app picker. Keep it in step with LocaleManager.SUPPORTED_TAGS
+  and the values-<tag> resource folders.
+-->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="en" />
+    <locale android:name="ar" />
+</locale-config>
