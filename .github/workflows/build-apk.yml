@@ -39,7 +39,7 @@ jobs:
         if: ${{ env.JSON_CONTENT != '' }}
         run: printf 'GOOGLE_SERVICES_JSON<<EOF\n%s\nEOF\n' "$JSON_CONTENT" >> $GITHUB_ENV
 
-      - name: Build release APK
+      - name: Build debug APK
         env:
           SKETCHUB_API_KEY: ${{ secrets.SKETCHUB_API_KEY }}
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -55,13 +55,18 @@ jobs:
           sed -i 's|^org\.gradle\.jvmargs=.*|org.gradle.jvmargs=-Xmx5g -Xss32m -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8 -XX:+UseParallelGC|' gradle.properties
           grep '^org\.gradle\.jvmargs=' gradle.properties
           chmod +x ./gradlew
-          ./gradlew --no-daemon --max-workers=1 assembleRelease
+          # assembleRelease currently dies in D8 with a StackOverflowError on the
+          # source-generator classes (deeply nested string concatenation that
+          # javac cannot fold because the package name is a variable). Raising
+          # the stack to 32m does not clear it, so the installable build is the
+          # debug variant until those generators are rewritten with StringBuilder.
+          ./gradlew --no-daemon --max-workers=1 assembleDebug
 
       - name: Collect the APK and report who signed it
         id: collect
         run: |
           set -euo pipefail
-          apk=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          apk=$(find app/build/outputs/apk/debug -name '*.apk' | head -1)
           test -n "$apk"
           short=$(git rev-parse --short HEAD)
           out="sketchware-ia-${short}.apk"
