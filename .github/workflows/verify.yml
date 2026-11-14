@@ -1,0 +1,114 @@
+name: Verify (WIP)
+
+# Fast verification for work-in-progress branches.
+# android.yml ignores wip/** branches, so this runs instead of the
+# release pipeline: no Telegram notifications, no artifact deletion,
+# no GitHub release. Build + unit tests only.
+
+on:
+  push:
+    branches:
+      - 'wip/**'
+  workflow_dispatch:
+    inputs:
+      run_lint:
+        description: 'Also run Android Lint (slow)'
+        required: false
+        default: 'false'
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Build + unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Assemble debug APK
+        id: assemble
+        env:
+          GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx5g -Dfile.encoding=UTF-8 -XX:+UseParallelGC
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --max-workers=1 --stacktrace assembleDebug
+
+      - name: Run unit tests
+        id: unit_tests
+        if: always() && steps.assemble.outcome == 'success'
+        env:
+          GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx5g -Dfile.encoding=UTF-8 -XX:+UseParallelGC
+        run: |
+          ./gradlew --no-daemon --max-workers=1 testDebugUnitTest
+
+      - name: Summarise failing tests
+        if: always() && steps.unit_tests.outcome == 'failure'
+        run: |
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          failed = 0
+          for path in glob.glob('app/build/test-results/**/*.xml', recursive=True):
+              try:
+                  root = ET.parse(path).getroot()
+              except ET.ParseError:
+                  continue
+              for case in root.iter('testcase'):
+                  for bad in list(case.findall('failure')) + list(case.findall('error')):
+                      failed += 1
+                      print('=' * 70)
+                      print('FAILED: %s.%s' % (case.get('classname'), case.get('name')))
+                      print('-' * 70)
+                      print((bad.text or bad.get('message') or '')[:4000])
+          print('\nTotal failing test cases: %d' % failed)
+          PY
+
+      - name: Run Android Lint
+        if: always() && github.event.inputs.run_lint == 'true'
+        continue-on-error: true
+        env:
+          GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx5g -Dfile.encoding=UTF-8 -XX:+UseParallelGC
+        run: |
+          ./gradlew --no-daemon --max-workers=1 lintDebug || true
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          from collections import Counter
+          counts = Counter()
+          for path in glob.glob('app/build/reports/lint-results-*.xml'):
+              try:
+                  root = ET.parse(path).getroot()
+              except ET.ParseError:
+                  continue
+              for issue in root.iter('issue'):
+                  sev = issue.get('severity')
+                  counts[(sev, issue.get('id'))] += 1
+                  if sev in ('Error', 'Fatal'):
+                      loc = issue.find('location')
+                      where = loc.get('file') if loc is not None else '?'
+                      print('%s [%s] %s -- %s' % (sev, issue.get('id'), issue.get('message'), where))
+          print('\n--- issue counts ---')
+          for (sev, iid), n in counts.most_common(40):
+              print('%-8s %-32s %d' % (sev, iid, n))
+          PY
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-reports-${{ github.run_number }}
+          path: |
+            app/build/reports/
+            app/build/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
