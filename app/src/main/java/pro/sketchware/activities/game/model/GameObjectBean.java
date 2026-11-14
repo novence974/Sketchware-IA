@@ -91,6 +91,55 @@ public class GameObjectBean {
     public boolean activeOnlyNearCamera = false;
     public boolean toggled = false;
 
+    // --- Transform refinements -------------------------------------------
+    /** Mirrors the drawing horizontally; the collider is unaffected. */
+    public boolean flipX = false;
+    /** Mirrors the drawing vertically; the collider is unaffected. */
+    public boolean flipY = false;
+    /**
+     * Origin of rotation and scale, as a fraction of the bounds.
+     * {@code 0.5, 0.5} is the centre (the engine's previous fixed behaviour),
+     * {@code 0, 1} is the bottom-left corner — what a character standing on
+     * the ground usually wants to turn around.
+     */
+    public float pivotX = 0.5f;
+    public float pivotY = 0.5f;
+
+    // --- Collider, decoupled from the drawn bounds -------------------------
+    /** Collider offset from the object's box, in world pixels. */
+    public float colliderOffsetX = 0f;
+    public float colliderOffsetY = 0f;
+    /** Collider size as a fraction of width/height; 1 matches the bounds. */
+    public float colliderScaleX = 1f;
+    public float colliderScaleY = 1f;
+
+    // --- Collision filtering ----------------------------------------------
+    /** Bit index (0-31) of the layer this body belongs to. */
+    public int collisionLayer = 0;
+    /** Bitmask of layers this body may collide with; -1 means all of them. */
+    public int collisionMask = -1;
+
+    // --- Body dynamics -----------------------------------------------------
+    /** Only meaningful for dynamic bodies; must stay above zero. */
+    public float mass = 1f;
+    /** Fraction of velocity shed per second. 0 keeps motion indefinitely. */
+    public float linearDamping = 0f;
+    /** Speed ceiling in px/s. 0 means unlimited. */
+    public float maxSpeed = 0f;
+
+    // --- Health ------------------------------------------------------------
+    /** 0 turns the health system off for this object. */
+    public float maxHealth = 0f;
+    public float health = 0f;
+    /** Seconds of immunity after taking a hit. */
+    public float invincibleSec = 0.8f;
+
+    // --- Organisation -------------------------------------------------------
+    /** id of the object this one is grouped under; empty when top level. */
+    public String parentId = "";
+    /** Designer data as {@code key=value} pairs separated by ';'. */
+    public String customProps = "";
+
     public boolean visible = true;
     public boolean locked = false;
 
@@ -122,6 +171,23 @@ public class GameObjectBean {
         if (targetScene == null) targetScene = "__next__";
         if (spriteFrames == null) spriteFrames = "";
         if (animFps <= 0f) animFps = 8f;
+        if (parentId == null) parentId = "";
+        if (customProps == null) customProps = "";
+        // A project saved before these fields existed deserializes them as 0,
+        // which would mean "no pivot, no collider, weightless"; normalise.
+        pivotX = clamp01(pivotX);
+        pivotY = clamp01(pivotY);
+        if (colliderScaleX <= 0f) colliderScaleX = 1f;
+        if (colliderScaleY <= 0f) colliderScaleY = 1f;
+        if (mass <= 0f) mass = 1f;
+        if (linearDamping < 0f) linearDamping = 0f;
+        if (maxSpeed < 0f) maxSpeed = 0f;
+        if (collisionLayer < 0 || collisionLayer > 31) collisionLayer = 0;
+        if (collisionMask == 0) collisionMask = -1;
+        if (maxHealth < 0f) maxHealth = 0f;
+        if (maxHealth > 0f && health <= 0f) health = maxHealth;
+        if (health > maxHealth && maxHealth > 0f) health = maxHealth;
+        if (invincibleSec < 0f) invincibleSec = 0f;
         if (TYPE_PHYSICS_CIRCLE.equals(type)) {
             circleCollider = true;
         }
@@ -183,9 +249,96 @@ public class GameObjectBean {
         clone.destroyOffscreen = destroyOffscreen;
         clone.activeOnlyNearCamera = activeOnlyNearCamera;
         clone.toggled = toggled;
+        clone.flipX = flipX;
+        clone.flipY = flipY;
+        clone.pivotX = pivotX;
+        clone.pivotY = pivotY;
+        clone.colliderOffsetX = colliderOffsetX;
+        clone.colliderOffsetY = colliderOffsetY;
+        clone.colliderScaleX = colliderScaleX;
+        clone.colliderScaleY = colliderScaleY;
+        clone.collisionLayer = collisionLayer;
+        clone.collisionMask = collisionMask;
+        clone.mass = mass;
+        clone.linearDamping = linearDamping;
+        clone.maxSpeed = maxSpeed;
+        clone.maxHealth = maxHealth;
+        clone.health = health;
+        clone.invincibleSec = invincibleSec;
+        clone.parentId = parentId;
+        clone.customProps = customProps;
         clone.visible = visible;
         clone.locked = locked;
         return clone;
+    }
+
+    private static float clamp01(float value) {
+        if (Float.isNaN(value)) return 0.5f;
+        return value < 0f ? 0f : (value > 1f ? 1f : value);
+    }
+
+    /** Collider box in world space, after offset and scale. */
+    public float colliderLeft() {
+        return x + colliderOffsetX + width * (1f - colliderScaleX) * 0.5f;
+    }
+
+    public float colliderTop() {
+        return y + colliderOffsetY + height * (1f - colliderScaleY) * 0.5f;
+    }
+
+    public float colliderWidth() {
+        return Math.max(1f, width * colliderScaleX);
+    }
+
+    public float colliderHeight() {
+        return Math.max(1f, height * colliderScaleY);
+    }
+
+    /** True when the two bodies' layer masks let them see each other. */
+    public boolean collidesWith(GameObjectBean other) {
+        if (other == null) return false;
+        return (collisionMask & (1 << other.collisionLayer)) != 0
+                && (other.collisionMask & (1 << collisionLayer)) != 0;
+    }
+
+    /**
+     * Reads a designer-defined value out of {@link #customProps}.
+     * Returns {@code fallback} when the key is absent, so a script asking for
+     * a property nobody set gets a usable value instead of null.
+     */
+    public String customProp(String key, String fallback) {
+        if (key == null || key.isEmpty() || customProps == null || customProps.isEmpty()) {
+            return fallback;
+        }
+        for (String pair : customProps.split(";")) {
+            int eq = pair.indexOf('=');
+            if (eq <= 0) continue;
+            if (pair.substring(0, eq).trim().equals(key)) {
+                return pair.substring(eq + 1).trim();
+            }
+        }
+        return fallback;
+    }
+
+    public float customPropFloat(String key, float fallback) {
+        try {
+            return Float.parseFloat(customProp(key, String.valueOf(fallback)));
+        } catch (NumberFormatException invalid) {
+            return fallback;
+        }
+    }
+
+    /** Applies damage, honouring the invincibility window. Returns true if it landed. */
+    public boolean applyDamage(float amount) {
+        if (maxHealth <= 0f || amount <= 0f) {
+            return false;
+        }
+        health = Math.max(0f, health - amount);
+        return true;
+    }
+
+    public boolean isDead() {
+        return maxHealth > 0f && health <= 0f;
     }
 
     public boolean isHudType() {

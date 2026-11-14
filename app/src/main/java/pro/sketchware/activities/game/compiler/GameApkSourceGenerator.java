@@ -166,7 +166,12 @@ public final class GameApkSourceGenerator {
         }
     }
 
-    private static String buildMainActivitySource(String packageName, boolean defaultLandscape) {
+    /**
+     * Package-private so {@code GameApkSourceGeneratorTest} can assert the
+     * generated game's structure: nothing in CI compiles this template, so a
+     * mistake in it would otherwise only surface when a user exports an APK.
+     */
+    static String buildMainActivitySource(String packageName, boolean defaultLandscape) {
         String pkgHeader = packageName.isEmpty() ? "" : ("package " + packageName + ";\n\n");
         StringBuilder rawTemplate = new StringBuilder(163840);
         rawTemplate.append(MAIN_ACTIVITY_BODY_TEMPLATE_PART1);
@@ -475,6 +480,70 @@ public class MainActivity extends Activity {
         boolean activeOnlyNearCamera = false;
         boolean toggled = false;
         boolean visible = true;
+        boolean flipX = false;
+        boolean flipY = false;
+        float pivotX = 0.5f;
+        float pivotY = 0.5f;
+        float colliderOffsetX = 0f;
+        float colliderOffsetY = 0f;
+        float colliderScaleX = 1f;
+        float colliderScaleY = 1f;
+        int collisionLayer = 0;
+        int collisionMask = -1;
+        float mass = 1f;
+        float linearDamping = 0f;
+        float maxSpeed = 0f;
+        float maxHealth = 0f;
+        float health = 0f;
+        float invincibleSec = 0.8f;
+        String parentId = "";
+        String customProps = "";
+
+        float colliderLeft() {
+            return x + colliderOffsetX + width * (1f - colliderScaleX) * 0.5f;
+        }
+
+        float colliderTop() {
+            return y + colliderOffsetY + height * (1f - colliderScaleY) * 0.5f;
+        }
+
+        float colliderWidth() {
+            return Math.max(1f, width * colliderScaleX);
+        }
+
+        float colliderHeight() {
+            return Math.max(1f, height * colliderScaleY);
+        }
+
+        boolean collidesWith(ObjectData other) {
+            if (other == null) return false;
+            return (collisionMask & (1 << other.collisionLayer)) != 0
+                    && (other.collisionMask & (1 << collisionLayer)) != 0;
+        }
+
+        String customProp(String key, String fallback) {
+            if (key == null || key.isEmpty() || customProps == null || customProps.isEmpty()) {
+                return fallback;
+            }
+            for (String pair : customProps.split(";")) {
+                int eq = pair.indexOf('=');
+                if (eq <= 0) continue;
+                if (pair.substring(0, eq).trim().equals(key)) {
+                    return pair.substring(eq + 1).trim();
+                }
+            }
+            return fallback;
+        }
+
+        boolean applyDamage(float amount) {
+            if (maxHealth <= 0f || amount <= 0f) return false;
+            health = Math.max(0f, health - amount);
+            return true;
+        }
+
+        boolean isDead() {
+            return maxHealth > 0f && health <= 0f;
+        }
 
         ObjectData copy() {
             ObjectData c = new ObjectData();
@@ -523,6 +592,24 @@ public class MainActivity extends Activity {
             c.activeOnlyNearCamera = activeOnlyNearCamera;
             c.toggled = toggled;
             c.visible = visible;
+            c.flipX = flipX;
+            c.flipY = flipY;
+            c.pivotX = pivotX;
+            c.pivotY = pivotY;
+            c.colliderOffsetX = colliderOffsetX;
+            c.colliderOffsetY = colliderOffsetY;
+            c.colliderScaleX = colliderScaleX;
+            c.colliderScaleY = colliderScaleY;
+            c.collisionLayer = collisionLayer;
+            c.collisionMask = collisionMask;
+            c.mass = mass;
+            c.linearDamping = linearDamping;
+            c.maxSpeed = maxSpeed;
+            c.maxHealth = maxHealth;
+            c.health = health;
+            c.invincibleSec = invincibleSec;
+            c.parentId = parentId;
+            c.customProps = customProps;
             return c;
         }
 
@@ -587,6 +674,27 @@ public class MainActivity extends Activity {
             d.activeOnlyNearCamera = obj.optBoolean("activeOnlyNearCamera", false);
             d.toggled = obj.optBoolean("toggled", false);
             d.visible = obj.optBoolean("visible", true);
+            d.flipX = obj.optBoolean("flipX", false);
+            d.flipY = obj.optBoolean("flipY", false);
+            d.pivotX = Math.max(0f, Math.min(1f, (float) obj.optDouble("pivotX", 0.5)));
+            d.pivotY = Math.max(0f, Math.min(1f, (float) obj.optDouble("pivotY", 0.5)));
+            d.colliderOffsetX = (float) obj.optDouble("colliderOffsetX", 0.0);
+            d.colliderOffsetY = (float) obj.optDouble("colliderOffsetY", 0.0);
+            d.colliderScaleX = Math.max(0.05f, (float) obj.optDouble("colliderScaleX", 1.0));
+            d.colliderScaleY = Math.max(0.05f, (float) obj.optDouble("colliderScaleY", 1.0));
+            d.collisionLayer = Math.max(0, Math.min(31, obj.optInt("collisionLayer", 0)));
+            d.collisionMask = obj.optInt("collisionMask", -1);
+            if (d.collisionMask == 0) d.collisionMask = -1;
+            d.mass = Math.max(0.01f, (float) obj.optDouble("mass", 1.0));
+            d.linearDamping = Math.max(0f, (float) obj.optDouble("linearDamping", 0.0));
+            d.maxSpeed = Math.max(0f, (float) obj.optDouble("maxSpeed", 0.0));
+            d.maxHealth = Math.max(0f, (float) obj.optDouble("maxHealth", 0.0));
+            d.health = (float) obj.optDouble("health", d.maxHealth);
+            if (d.maxHealth > 0f && d.health <= 0f) d.health = d.maxHealth;
+            if (d.maxHealth > 0f && d.health > d.maxHealth) d.health = d.maxHealth;
+            d.invincibleSec = Math.max(0f, (float) obj.optDouble("invincibleSec", 0.8));
+            d.parentId = obj.optString("parentId", "");
+            d.customProps = obj.optString("customProps", "");
             return d;
         }
     }
@@ -1114,6 +1222,10 @@ public class MainActivity extends Activity {
             latchedButtons.clear();
             justPressedButtons.clear();
 
+            for (RuntimeEntity seedObj : objects) {
+                publishHealth(seedObj);
+            }
+
             float maxCamX = Math.max(0f, getWorldWidth() - project.virtualWidth);
             float maxCamY = Math.max(0f, getWorldHeight() - project.virtualHeight);
             for (RuntimeEntity obj : objects) {
@@ -1633,6 +1745,21 @@ public class MainActivity extends Activity {
                 obj.onGround = false;
                 obj.bean.velocityY = clamp(obj.bean.velocityY + gravityY * obj.bean.gravityScale * dt, -2400f, MAX_FALL_SPEED);
 
+                if (obj.bean.linearDamping > 0f) {
+                    float keep = Math.max(0f, 1f - obj.bean.linearDamping * dt);
+                    obj.bean.velocityX *= keep;
+                    obj.bean.velocityY *= keep;
+                }
+                if (obj.bean.maxSpeed > 0f) {
+                    float spSq = obj.bean.velocityX * obj.bean.velocityX + obj.bean.velocityY * obj.bean.velocityY;
+                    float mxSq = obj.bean.maxSpeed * obj.bean.maxSpeed;
+                    if (spSq > mxSq && spSq > 0.0001f) {
+                        float sc = (float) (obj.bean.maxSpeed / Math.sqrt(spSq));
+                        obj.bean.velocityX *= sc;
+                        obj.bean.velocityY *= sc;
+                    }
+                }
+
                 float dx = scriptDx + obj.bean.velocityX * dt;
                 obj.bean.x = obj.prevX + dx;
                 if (!obj.bean.isSensor) {
@@ -1641,17 +1768,25 @@ public class MainActivity extends Activity {
                                 || other.bean.isSensor || other.bean.oneWay) {
                             continue;
                         }
+                        if (!obj.bean.collidesWith(other.bean)) {
+                            continue;
+                        }
                         if (overlapsXPass(obj, other)) {
+                            float selfDX = colliderDX(obj.bean);
+                            float selfW = obj.bean.colliderWidth();
+                            float otherL = other.bean.colliderLeft();
+                            float otherW = other.bean.colliderWidth();
                             if (dx > 0f) {
-                                obj.bean.x = other.bean.x - obj.bean.width;
+                                obj.bean.x = otherL - selfW - selfDX;
                                 if (obj.bean.velocityX > 0f) obj.bean.velocityX = -obj.bean.velocityX * obj.bean.bounce;
                             } else if (dx < 0f) {
-                                obj.bean.x = other.bean.x + other.bean.width;
+                                obj.bean.x = otherL + otherW - selfDX;
                                 if (obj.bean.velocityX < 0f) obj.bean.velocityX = -obj.bean.velocityX * obj.bean.bounce;
                             } else {
-                                float ol = (obj.bean.x + obj.bean.width) - other.bean.x;
-                                float or = (other.bean.x + other.bean.width) - obj.bean.x;
-                                obj.bean.x = ol < or ? (other.bean.x - obj.bean.width) : (other.bean.x + other.bean.width);
+                                float selfL = obj.bean.colliderLeft();
+                                float ol = (selfL + selfW) - otherL;
+                                float or = (otherL + otherW) - selfL;
+                                obj.bean.x = ol < or ? (otherL - selfW - selfDX) : (otherL + otherW - selfDX);
                             }
                         }
                     }
@@ -1664,14 +1799,21 @@ public class MainActivity extends Activity {
                         if (other == obj || other.destroyed || other.isHud() || !other.bean.physicsEnabled || other.bean.isSensor) {
                             continue;
                         }
+                        if (!obj.bean.collidesWith(other.bean)) {
+                            continue;
+                        }
+                        float selfDY = colliderDY(obj.bean);
+                        float selfH = obj.bean.colliderHeight();
+                        float otherT = other.bean.colliderTop();
+                        float otherH = other.bean.colliderHeight();
                         if (other.bean.oneWay) {
-                            if (dy < 0f || (obj.prevY + obj.bean.height > other.bean.y + 6f)) {
+                            if (dy < 0f || (obj.prevY + selfDY + selfH > otherT + 6f)) {
                                 continue;
                             }
                         }
                         if (overlapsYPass(obj, other)) {
                             if (dy >= 0f) {
-                                obj.bean.y = other.bean.y - obj.bean.height;
+                                obj.bean.y = otherT - selfH - selfDY;
                                 obj.onGround = true;
                                 if (obj.bean.velocityY > 0f) {
                                     obj.bean.velocityY = (obj.bean.bounce > 0.05f) ? -obj.bean.velocityY * obj.bean.bounce : 0f;
@@ -1679,7 +1821,7 @@ public class MainActivity extends Activity {
                                 float damp = Math.max(0f, 1f - Math.max(obj.bean.friction, other.bean.friction) * 8f * dt);
                                 obj.bean.velocityX *= damp;
                             } else {
-                                obj.bean.y = other.bean.y + other.bean.height;
+                                obj.bean.y = otherT + otherH - selfDY;
                                 if (obj.bean.velocityY < 0f) obj.bean.velocityY = -obj.bean.velocityY * obj.bean.bounce;
                             }
                         }
@@ -1733,6 +1875,17 @@ public class MainActivity extends Activity {
                     obj.bean.velocityY = 0f;
                     obj.onGround = true;
                 }
+            }
+        }
+
+        private void publishHealth(RuntimeEntity obj) {
+            if (obj == null || obj.bean.maxHealth <= 0f) return;
+            String value = formatNumber(obj.bean.health);
+            String name = obj.bean.name == null ? "" : obj.bean.name.trim();
+            if (!name.isEmpty()) variables.put(name + "_health", value);
+            if ("player".equalsIgnoreCase(obj.bean.tag)) {
+                variables.put("health", value);
+                variables.put("max_health", formatNumber(obj.bean.maxHealth));
             }
         }
 
@@ -1798,6 +1951,32 @@ public class MainActivity extends Activity {
                             }
                             emitParticles(other.bean.x + other.bean.width * 0.5f, other.bean.y + other.bean.height * 0.5f, other.bean.color, 10);
                             other.destroyed = true;
+                        }
+                    } else if ("hazard".equals(oType)) {
+                        if (actor.hitCooldown <= 0f && !hasCollisionScriptBetween(actor, other)) {
+                            float hit = Math.max(0f, other.bean.damage);
+                            actor.hitCooldown = Math.max(0.1f, actor.bean.invincibleSec);
+                            emitParticles(actor.bean.x + actor.bean.width * 0.5f,
+                                    actor.bean.y + actor.bean.height * 0.5f, 0xFFF43F5E, 12);
+                            if (actor.bean.maxHealth > 0f) {
+                                actor.bean.applyDamage(hit);
+                                publishHealth(actor);
+                                if (actor.bean.isDead()) {
+                                    actor.bean.health = actor.bean.maxHealth;
+                                    publishHealth(actor);
+                                    if (actor.hasCheckpoint || respawnFall) {
+                                        respawnObjectAtCheckpoint(actor);
+                                    } else {
+                                        pendingSceneRestart = true;
+                                    }
+                                }
+                            } else if (hit > 0f) {
+                                if (actor.hasCheckpoint || respawnFall) {
+                                    respawnObjectAtCheckpoint(actor);
+                                } else {
+                                    pendingSceneRestart = true;
+                                }
+                            }
                         }
                     } else if ("death_zone".equals(oType)) {
                         if (actor.hitCooldown <= 0f && !hasCollisionScriptBetween(actor, other)) {
@@ -1879,29 +2058,48 @@ public class MainActivity extends Activity {
             transitionProgress = 0f;
         }
 
+        private static float colliderDX(ObjectData b) {
+            return b.colliderOffsetX + b.width * (1f - b.colliderScaleX) * 0.5f;
+        }
+
+        private static float colliderDY(ObjectData b) {
+            return b.colliderOffsetY + b.height * (1f - b.colliderScaleY) * 0.5f;
+        }
+
         private boolean overlapsXPass(RuntimeEntity a, RuntimeEntity b) {
-            return a.bean.x + a.bean.width > b.bean.x
-                    && a.bean.x < b.bean.x + b.bean.width
-                    && a.bean.y + a.bean.height > b.bean.y + 0.5f
-                    && a.bean.y < b.bean.y + b.bean.height - 0.5f;
+            float ax = a.bean.colliderLeft(), aw = a.bean.colliderWidth();
+            float ay = a.bean.colliderTop(), ah = a.bean.colliderHeight();
+            float bx = b.bean.colliderLeft(), bw = b.bean.colliderWidth();
+            float by = b.bean.colliderTop(), bh = b.bean.colliderHeight();
+            return ax + aw > bx
+                    && ax < bx + bw
+                    && ay + ah > by + 0.5f
+                    && ay < by + bh - 0.5f;
         }
 
         private boolean overlapsYPass(RuntimeEntity a, RuntimeEntity b) {
-            return a.bean.x + a.bean.width > b.bean.x + 0.5f
-                    && a.bean.x < b.bean.x + b.bean.width - 0.5f
-                    && a.bean.y + a.bean.height > b.bean.y
-                    && a.bean.y < b.bean.y + b.bean.height;
+            float ax = a.bean.colliderLeft(), aw = a.bean.colliderWidth();
+            float ay = a.bean.colliderTop(), ah = a.bean.colliderHeight();
+            float bx = b.bean.colliderLeft(), bw = b.bean.colliderWidth();
+            float by = b.bean.colliderTop(), bh = b.bean.colliderHeight();
+            return ax + aw > bx + 0.5f
+                    && ax < bx + bw - 0.5f
+                    && ay + ah > by
+                    && ay < by + bh;
         }
 
         private boolean aabbTouching(RuntimeEntity a, RuntimeEntity b) {
+            if (!a.bean.collidesWith(b.bean)) {
+                return false;
+            }
             float tol = (a.bean.isSensor || b.bean.isSensor) ? -1f : 0.75f;
             if (a.bean.circleCollider && b.bean.circleCollider) {
-                float ax = a.bean.x + a.bean.width * 0.5f;
-                float ay = a.bean.y + a.bean.height * 0.5f;
-                float ar = Math.min(a.bean.width, a.bean.height) * 0.5f;
-                float bx = b.bean.x + b.bean.width * 0.5f;
-                float by = b.bean.y + b.bean.height * 0.5f;
-                float br = Math.min(b.bean.width, b.bean.height) * 0.5f;
+                float ax = a.bean.colliderLeft() + a.bean.colliderWidth() * 0.5f;
+                float ay = a.bean.colliderTop() + a.bean.colliderHeight() * 0.5f;
+                float ar = Math.min(a.bean.colliderWidth(), a.bean.colliderHeight()) * 0.5f;
+                float bx = b.bean.colliderLeft() + b.bean.colliderWidth() * 0.5f;
+                float by = b.bean.colliderTop() + b.bean.colliderHeight() * 0.5f;
+                float br = Math.min(b.bean.colliderWidth(), b.bean.colliderHeight()) * 0.5f;
                 float distSq = (ax - bx) * (ax - bx) + (ay - by) * (ay - by);
                 float rSum = ar + br + tol;
                 return distSq <= rSum * rSum;
@@ -1909,19 +2107,21 @@ public class MainActivity extends Activity {
             if (a.bean.circleCollider != b.bean.circleCollider) {
                 RuntimeEntity circ = a.bean.circleCollider ? a : b;
                 RuntimeEntity box = a.bean.circleCollider ? b : a;
-                float cx = circ.bean.x + circ.bean.width * 0.5f;
-                float cy = circ.bean.y + circ.bean.height * 0.5f;
-                float r = Math.min(circ.bean.width, circ.bean.height) * 0.5f + tol;
-                float nearX = clamp(cx, box.bean.x, box.bean.x + box.bean.width);
-                float nearY = clamp(cy, box.bean.y, box.bean.y + box.bean.height);
+                float cx = circ.bean.colliderLeft() + circ.bean.colliderWidth() * 0.5f;
+                float cy = circ.bean.colliderTop() + circ.bean.colliderHeight() * 0.5f;
+                float r = Math.min(circ.bean.colliderWidth(), circ.bean.colliderHeight()) * 0.5f + tol;
+                float boxL = box.bean.colliderLeft();
+                float boxT = box.bean.colliderTop();
+                float nearX = clamp(cx, boxL, boxL + box.bean.colliderWidth());
+                float nearY = clamp(cy, boxT, boxT + box.bean.colliderHeight());
                 float dx = cx - nearX;
                 float dy = cy - nearY;
                 return dx * dx + dy * dy <= r * r;
             }
-            return a.bean.x + a.bean.width > b.bean.x - tol
-                    && a.bean.x < b.bean.x + b.bean.width + tol
-                    && a.bean.y + a.bean.height > b.bean.y - tol
-                    && a.bean.y < b.bean.y + b.bean.height + tol;
+            return a.bean.colliderLeft() + a.bean.colliderWidth() > b.bean.colliderLeft() - tol
+                    && a.bean.colliderLeft() < b.bean.colliderLeft() + b.bean.colliderWidth() + tol
+                    && a.bean.colliderTop() + a.bean.colliderHeight() > b.bean.colliderTop() - tol
+                    && a.bean.colliderTop() < b.bean.colliderTop() + b.bean.colliderHeight() + tol;
         }
 
         private void enqueueCollisionScripts(RuntimeEntity owner, RuntimeEntity other) {
@@ -3759,9 +3959,14 @@ public class MainActivity extends Activity {
             int alphaInt = Math.max(0, Math.min(255, Math.round(b.alpha * 255f)));
 
             canvas.save();
-            canvas.translate(cx, cy);
+            canvas.translate(b.x + w * b.pivotX, b.y + h * b.pivotY);
             if (b.rotation != 0f) canvas.rotate(b.rotation);
-            if (b.scaleX != 1f || b.scaleY != 1f) canvas.scale(b.scaleX, b.scaleY);
+            float drawScaleX = b.flipX ? -b.scaleX : b.scaleX;
+            float drawScaleY = b.flipY ? -b.scaleY : b.scaleY;
+            if (drawScaleX != 1f || drawScaleY != 1f) canvas.scale(drawScaleX, drawScaleY);
+            if (b.pivotX != 0.5f || b.pivotY != 0.5f) {
+                canvas.translate((0.5f - b.pivotX) * w, (0.5f - b.pivotY) * h);
+            }
 
             Bitmap bmp = loadBitmap(b.spriteResName);
             if (bmp != null && !bmp.isRecycled()) {

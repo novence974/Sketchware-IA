@@ -457,6 +457,12 @@ public class GameRuntimeView extends SurfaceView implements SurfaceHolder.Callba
         latchedButtons.clear();
         justPressedButtons.clear();
 
+        // Seed the health variables so a HUD bar bound to them shows the
+        // starting value before anything has been hit.
+        for (RuntimeObject obj : objects) {
+            publishHealth(obj);
+        }
+
         // Check if scene contains a camera object for initial offset
         float maxCamX = Math.max(0f, getWorldWidth() - project.virtualWidth);
         float maxCamY = Math.max(0f, getWorldHeight() - project.virtualHeight);
@@ -1047,7 +1053,26 @@ public class GameRuntimeView extends SurfaceView implements SurfaceHolder.Callba
             float scriptDy = obj.bean.y - obj.prevY;
 
             obj.onGround = false;
+            // Heavier bodies are pulled no faster (gravity is an acceleration)
+            // but mass scales how far a given impulse moves them, which the
+            // script blocks use when they push a body.
             obj.bean.velocityY = clamp(obj.bean.velocityY + gravityY * obj.bean.gravityScale * dt, -2400f, MAX_FALL_SPEED);
+
+            if (obj.bean.linearDamping > 0f) {
+                float keep = Math.max(0f, 1f - obj.bean.linearDamping * dt);
+                obj.bean.velocityX *= keep;
+                obj.bean.velocityY *= keep;
+            }
+            if (obj.bean.maxSpeed > 0f) {
+                float speedSq = obj.bean.velocityX * obj.bean.velocityX
+                        + obj.bean.velocityY * obj.bean.velocityY;
+                float maxSq = obj.bean.maxSpeed * obj.bean.maxSpeed;
+                if (speedSq > maxSq && speedSq > 0.0001f) {
+                    float scale = (float) (obj.bean.maxSpeed / Math.sqrt(speedSq));
+                    obj.bean.velocityX *= scale;
+                    obj.bean.velocityY *= scale;
+                }
+            }
 
             // Integrate X
             float dx = scriptDx + obj.bean.velocityX * dt;
@@ -1058,25 +1083,33 @@ public class GameRuntimeView extends SurfaceView implements SurfaceHolder.Callba
                             || other.bean.isSensor || other.bean.oneWay) {
                         continue;
                     }
+                    if (!layersCollide(obj, other)) {
+                        continue;
+                    }
                     if (overlapsXPass(obj, other)) {
+                        // Resolved against the collider, then mapped back to
+                        // the object's own x through colliderDX.
+                        float selfDX = colliderDX(obj.bean);
+                        float selfW = obj.bean.colliderWidth();
+                        float otherL = other.bean.colliderLeft();
+                        float otherW = other.bean.colliderWidth();
                         if (dx > 0f) {
-                            obj.bean.x = other.bean.x - obj.bean.width;
+                            obj.bean.x = otherL - selfW - selfDX;
                             if (obj.bean.velocityX > 0f) {
                                 obj.bean.velocityX = -obj.bean.velocityX * obj.bean.bounce;
                             }
                         } else if (dx < 0f) {
-                            obj.bean.x = other.bean.x + other.bean.width;
+                            obj.bean.x = otherL + otherW - selfDX;
                             if (obj.bean.velocityX < 0f) {
                                 obj.bean.velocityX = -obj.bean.velocityX * obj.bean.bounce;
                             }
                         } else {
-                            float overlapLeft = (obj.bean.x + obj.bean.width) - other.bean.x;
-                            float overlapRight = (other.bean.x + other.bean.width) - obj.bean.x;
-                            if (overlapLeft < overlapRight) {
-                                obj.bean.x = other.bean.x - obj.bean.width;
-                            } else {
-                                obj.bean.x = other.bean.x + other.bean.width;
-                            }
+                            float selfL = obj.bean.colliderLeft();
+                            float overlapLeft = (selfL + selfW) - otherL;
+                            float overlapRight = (otherL + otherW) - selfL;
+                            obj.bean.x = (overlapLeft < overlapRight)
+                                    ? otherL - selfW - selfDX
+                                    : otherL + otherW - selfDX;
                         }
                     }
                 }
@@ -1090,14 +1123,21 @@ public class GameRuntimeView extends SurfaceView implements SurfaceHolder.Callba
                     if (other == obj || other.destroyed || other.isHud() || !other.bean.physicsEnabled || other.bean.isSensor) {
                         continue;
                     }
+                    if (!layersCollide(obj, other)) {
+                        continue;
+                    }
+                    float selfDY = colliderDY(obj.bean);
+                    float selfH = obj.bean.colliderHeight();
+                    float otherT = other.bean.colliderTop();
+                    float otherH = other.bean.colliderHeight();
                     if (other.bean.oneWay) {
-                        if (dy < 0f || (obj.prevY + obj.bean.height > other.bean.y + 6f)) {
+                        if (dy < 0f || (obj.prevY + selfDY + selfH > otherT + 6f)) {
                             continue;
                         }
                     }
                     if (overlapsYPass(obj, other)) {
                         if (dy >= 0f) {
-                            obj.bean.y = other.bean.y - obj.bean.height;
+                            obj.bean.y = otherT - selfH - selfDY;
                             obj.onGround = true;
                             if (obj.bean.velocityY > 0f) {
                                 obj.bean.velocityY = (obj.bean.bounce > 0.05f) ? -obj.bean.velocityY * obj.bean.bounce : 0f;
@@ -1105,7 +1145,7 @@ public class GameRuntimeView extends SurfaceView implements SurfaceHolder.Callba
                             float damp = Math.max(0f, 1f - Math.max(obj.bean.friction, other.bean.friction) * 8f * dt);
                             obj.bean.velocityX *= damp;
                         } else {
-                            obj.bean.y = other.bean.y + other.bean.height;
+                            obj.bean.y = otherT + otherH - selfDY;
                             if (obj.bean.velocityY < 0f) {
                                 obj.bean.velocityY = -obj.bean.velocityY * obj.bean.bounce;
                             }
@@ -1232,6 +1272,38 @@ public class GameRuntimeView extends SurfaceView implements SurfaceHolder.Callba
                         emitParticleBurst(other.bean.x + other.bean.width * 0.5f, other.bean.y + other.bean.height * 0.5f, other.bean.color, 10);
                         other.destroyed = true;
                     }
+                } else if (GameObjectBean.TYPE_HAZARD.equals(oType)) {
+                    // Hazard shipped with a damage field, a palette entry and
+                    // a drawing, but nothing ever read it: touching one did
+                    // nothing. It now spends the actor's health, and falls
+                    // back to being lethal for actors that have none.
+                    if (actor.hitCooldown <= 0f && !hasCollisionScriptBetween(actor, other)) {
+                        float hit = Math.max(0f, other.bean.damage);
+                        actor.hitCooldown = Math.max(0.1f, actor.bean.invincibleSec);
+                        emitParticleBurst(
+                                actor.bean.x + actor.bean.width * 0.5f,
+                                actor.bean.y + actor.bean.height * 0.5f,
+                                0xFFF43F5E, 12);
+                        if (actor.bean.maxHealth > 0f) {
+                            actor.bean.applyDamage(hit);
+                            publishHealth(actor);
+                            if (actor.bean.isDead()) {
+                                actor.bean.health = actor.bean.maxHealth;
+                                publishHealth(actor);
+                                if (actor.hasCheckpoint || respawnFall) {
+                                    respawnObjectAtCheckpoint(actor);
+                                } else {
+                                    pendingSceneRestart = true;
+                                }
+                            }
+                        } else if (hit > 0f) {
+                            if (actor.hasCheckpoint || respawnFall) {
+                                respawnObjectAtCheckpoint(actor);
+                            } else {
+                                pendingSceneRestart = true;
+                            }
+                        }
+                    }
                 } else if (GameObjectBean.TYPE_DEATH_ZONE.equals(oType)) {
                     if (actor.hitCooldown <= 0f && !hasCollisionScriptBetween(actor, other)) {
                         if (actor.hasCheckpoint || respawnFall) {
@@ -1250,6 +1322,27 @@ public class GameRuntimeView extends SurfaceView implements SurfaceHolder.Callba
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * Mirrors an object's health into the script variables so a HUD bar or a
+     * block can read it: always as {@code <name>_health}, and additionally as
+     * plain {@code health} when the object is tagged "player", which is what
+     * a single-character game expects to bind its health bar to.
+     */
+    private void publishHealth(RuntimeObject obj) {
+        if (obj == null || obj.bean.maxHealth <= 0f) {
+            return;
+        }
+        String value = formatNumber(obj.bean.health);
+        String name = obj.bean.name == null ? "" : obj.bean.name.trim();
+        if (!name.isEmpty()) {
+            variables.put(name + "_health", value);
+        }
+        if ("player".equalsIgnoreCase(obj.bean.tag)) {
+            variables.put("health", value);
+            variables.put("max_health", formatNumber(obj.bean.maxHealth));
         }
     }
 
@@ -1316,29 +1409,59 @@ public class GameRuntimeView extends SurfaceView implements SurfaceHolder.Callba
         transitionProgress = 0f;
     }
 
+    /**
+     * Distance from the object's own x to its collider's left edge. Collision
+     * is resolved in collider space and mapped back through this, so a sprite
+     * whose artwork is wider than its hitbox still lands correctly. With the
+     * defaults (offset 0, scale 1) it is 0 and the maths is unchanged.
+     */
+    private static float colliderDX(GameObjectBean b) {
+        return b.colliderOffsetX + b.width * (1f - b.colliderScaleX) * 0.5f;
+    }
+
+    private static float colliderDY(GameObjectBean b) {
+        return b.colliderOffsetY + b.height * (1f - b.colliderScaleY) * 0.5f;
+    }
+
+    /** Whether the layer masks of both bodies admit a collision between them. */
+    private static boolean layersCollide(RuntimeObject a, RuntimeObject b) {
+        return a.bean.collidesWith(b.bean);
+    }
+
     private boolean overlapsXPass(RuntimeObject a, RuntimeObject b) {
-        return a.bean.x + a.bean.width > b.bean.x
-                && a.bean.x < b.bean.x + b.bean.width
-                && a.bean.y + a.bean.height > b.bean.y + 0.5f
-                && a.bean.y < b.bean.y + b.bean.height - 0.5f;
+        float ax = a.bean.colliderLeft(), aw = a.bean.colliderWidth();
+        float ay = a.bean.colliderTop(), ah = a.bean.colliderHeight();
+        float bx = b.bean.colliderLeft(), bw = b.bean.colliderWidth();
+        float by = b.bean.colliderTop(), bh = b.bean.colliderHeight();
+        return ax + aw > bx
+                && ax < bx + bw
+                && ay + ah > by + 0.5f
+                && ay < by + bh - 0.5f;
     }
 
     private boolean overlapsYPass(RuntimeObject a, RuntimeObject b) {
-        return a.bean.x + a.bean.width > b.bean.x + 0.5f
-                && a.bean.x < b.bean.x + b.bean.width - 0.5f
-                && a.bean.y + a.bean.height > b.bean.y
-                && a.bean.y < b.bean.y + b.bean.height;
+        float ax = a.bean.colliderLeft(), aw = a.bean.colliderWidth();
+        float ay = a.bean.colliderTop(), ah = a.bean.colliderHeight();
+        float bx = b.bean.colliderLeft(), bw = b.bean.colliderWidth();
+        float by = b.bean.colliderTop(), bh = b.bean.colliderHeight();
+        return ax + aw > bx + 0.5f
+                && ax < bx + bw - 0.5f
+                && ay + ah > by
+                && ay < by + bh;
     }
 
     private boolean aabbTouchingOrOverlapping(RuntimeObject a, RuntimeObject b) {
+        if (!layersCollide(a, b)) {
+            return false;
+        }
         float tol = (a.bean.isSensor || b.bean.isSensor) ? -1f : 0.75f;
         if (a.bean.circleCollider && b.bean.circleCollider) {
-            float ax = a.bean.x + a.bean.width * 0.5f;
-            float ay = a.bean.y + a.bean.height * 0.5f;
-            float ar = Math.min(a.bean.width, a.bean.height) * 0.5f;
-            float bx = b.bean.x + b.bean.width * 0.5f;
-            float by = b.bean.y + b.bean.height * 0.5f;
-            float br = Math.min(b.bean.width, b.bean.height) * 0.5f;
+            float ax = a.bean.colliderLeft() + a.bean.colliderWidth() * 0.5f;
+            float ay = a.bean.colliderTop() + a.bean.colliderHeight() * 0.5f;
+            float ar = Math.min(a.bean.colliderWidth(), a.bean.colliderHeight()) * 0.5f;
+            float bx = b.bean.colliderLeft() + b.bean.colliderWidth() * 0.5f;
+            float by = b.bean.colliderTop() + b.bean.colliderHeight() * 0.5f;
+            float br = Math.min(b.bean.colliderWidth(), b.bean.colliderHeight()) * 0.5f;
             float distSq = (ax - bx) * (ax - bx) + (ay - by) * (ay - by);
             float rSum = ar + br + tol;
             return distSq <= rSum * rSum;
@@ -1346,19 +1469,21 @@ public class GameRuntimeView extends SurfaceView implements SurfaceHolder.Callba
         if (a.bean.circleCollider != b.bean.circleCollider) {
             RuntimeObject circ = a.bean.circleCollider ? a : b;
             RuntimeObject box = a.bean.circleCollider ? b : a;
-            float cx = circ.bean.x + circ.bean.width * 0.5f;
-            float cy = circ.bean.y + circ.bean.height * 0.5f;
-            float r = Math.min(circ.bean.width, circ.bean.height) * 0.5f + tol;
-            float nearX = clamp(cx, box.bean.x, box.bean.x + box.bean.width);
-            float nearY = clamp(cy, box.bean.y, box.bean.y + box.bean.height);
+            float cx = circ.bean.colliderLeft() + circ.bean.colliderWidth() * 0.5f;
+            float cy = circ.bean.colliderTop() + circ.bean.colliderHeight() * 0.5f;
+            float r = Math.min(circ.bean.colliderWidth(), circ.bean.colliderHeight()) * 0.5f + tol;
+            float boxL = box.bean.colliderLeft();
+            float boxT = box.bean.colliderTop();
+            float nearX = clamp(cx, boxL, boxL + box.bean.colliderWidth());
+            float nearY = clamp(cy, boxT, boxT + box.bean.colliderHeight());
             float dx = cx - nearX;
             float dy = cy - nearY;
             return dx * dx + dy * dy <= r * r;
         }
-        return a.bean.x + a.bean.width > b.bean.x - tol
-                && a.bean.x < b.bean.x + b.bean.width + tol
-                && a.bean.y + a.bean.height > b.bean.y - tol
-                && a.bean.y < b.bean.y + b.bean.height + tol;
+        return a.bean.colliderLeft() + a.bean.colliderWidth() > b.bean.colliderLeft() - tol
+                && a.bean.colliderLeft() < b.bean.colliderLeft() + b.bean.colliderWidth() + tol
+                && a.bean.colliderTop() + a.bean.colliderHeight() > b.bean.colliderTop() - tol
+                && a.bean.colliderTop() < b.bean.colliderTop() + b.bean.colliderHeight() + tol;
     }
 
     private void enqueueCollisionScripts(RuntimeObject owner, RuntimeObject other) {
@@ -3614,17 +3739,23 @@ public class GameRuntimeView extends SurfaceView implements SurfaceHolder.Callba
 
         float w = Math.max(1f, b.width);
         float h = Math.max(1f, b.height);
-        float cx = b.x + w * 0.5f;
-        float cy = b.y + h * 0.5f;
         int alphaInt = Math.max(0, Math.min(255, Math.round(b.alpha * 255f)));
 
         canvas.save();
-        canvas.translate(cx, cy);
+        // Rotate and scale about the pivot, then shift so the local origin is
+        // still the box centre — every shape below is drawn around 0,0, and
+        // the default pivot of 0.5,0.5 makes that shift zero.
+        canvas.translate(b.x + w * b.pivotX, b.y + h * b.pivotY);
         if (b.rotation != 0f) {
             canvas.rotate(b.rotation);
         }
-        if (b.scaleX != 1f || b.scaleY != 1f) {
-            canvas.scale(b.scaleX, b.scaleY);
+        float drawScaleX = b.flipX ? -b.scaleX : b.scaleX;
+        float drawScaleY = b.flipY ? -b.scaleY : b.scaleY;
+        if (drawScaleX != 1f || drawScaleY != 1f) {
+            canvas.scale(drawScaleX, drawScaleY);
+        }
+        if (b.pivotX != 0.5f || b.pivotY != 0.5f) {
+            canvas.translate((0.5f - b.pivotX) * w, (0.5f - b.pivotY) * h);
         }
 
         Bitmap bmp = loadBitmap(b.spriteResName);
