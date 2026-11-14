@@ -176,6 +176,7 @@ public final class GameApkSourceGenerator {
         StringBuilder rawTemplate = new StringBuilder(163840);
         rawTemplate.append(MAIN_ACTIVITY_BODY_TEMPLATE_PART1);
         rawTemplate.append(MAIN_ACTIVITY_BODY_TEMPLATE_PART2);
+        rawTemplate.append(MAIN_ACTIVITY_BODY_TEMPLATE_PART2A);
         rawTemplate.append(MAIN_ACTIVITY_BODY_TEMPLATE_PART2B);
         rawTemplate.append(MAIN_ACTIVITY_BODY_TEMPLATE_PART3);
         rawTemplate.append(MAIN_ACTIVITY_BODY_TEMPLATE_PART4);
@@ -185,6 +186,12 @@ public final class GameApkSourceGenerator {
         return pkgHeader + body;
     }
 
+    // The exported game's source is held in these parts and simply
+    // concatenated in order by buildMainActivitySource. They are split for one
+    // reason: a Java string constant cannot exceed 65535 bytes of modified
+    // UTF-8, and the compiler reports it as "constant string too long" with no
+    // hint of which constant. Keep each part comfortably under that, and split
+    // again at a method boundary when one grows past it.
     private static final String MAIN_ACTIVITY_BODY_TEMPLATE_PART1 = """
 import android.app.ActionBar;
 import android.app.Activity;
@@ -1998,7 +2005,9 @@ public class MainActivity extends Activity {
                 }
             }
         }
+""";
 
+    private static final String MAIN_ACTIVITY_BODY_TEMPLATE_PART2A = """
         private boolean hasCollisionScriptBetween(RuntimeEntity actor, RuntimeEntity other) {
             for (ScriptData s : sceneScripts) {
                 if (!"on_collision".equals(s.eventType)) continue;
