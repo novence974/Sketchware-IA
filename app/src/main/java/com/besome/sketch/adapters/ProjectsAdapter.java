@@ -193,6 +193,8 @@ public class ProjectsAdapter extends RecyclerView.Adapter<ProjectsAdapter.Projec
                     toAndroidStudioProjectActivity(projectMap);
                 } else if (RecentProjectsRegistry.isGameProject(projectMap)) {
                     projectsFragment.toGameEngineActivity(scId);
+                } else if (RecentProjectsRegistry.isGame3DProject(projectMap)) {
+                    projectsFragment.toGame3DEditorActivity(scId);
                 } else {
                     projectsFragment.toDesignActivity(scId);
                 }
@@ -259,14 +261,16 @@ public class ProjectsAdapter extends RecyclerView.Adapter<ProjectsAdapter.Projec
     private void bindProjectType(ProjectViewHolder holder, HashMap<String, Object> projectMap) {
         boolean androidStudioProject = RecentProjectsRegistry.isAndroidStudioProject(projectMap);
         boolean gameProject = RecentProjectsRegistry.isGameProject(projectMap);
+        boolean game3dProject = RecentProjectsRegistry.isGame3DProject(projectMap);
         if (androidStudioProject) {
             holder.binding.projectTypeBadge.setText(R.string.project_type_android_studio);
             holder.binding.projectTypeBadge.setTextColor(ContextCompat.getColor(activity, R.color.chat_accent));
             holder.binding.projectTypeBadge.setBackgroundResource(R.drawable.bg_chat_status_chip);
             holder.binding.imgIconView.setStrokeColor(ContextCompat.getColor(activity, R.color.chat_accent));
             holder.binding.imgIconView.setStrokeWidth(dp(1));
-        } else if (gameProject) {
-            holder.binding.projectTypeBadge.setText(R.string.project_type_game_2d);
+        } else if (gameProject || game3dProject) {
+            holder.binding.projectTypeBadge.setText(game3dProject
+                    ? R.string.project_type_game_3d : R.string.project_type_game_2d);
             holder.binding.projectTypeBadge.setTextColor(ContextCompat.getColor(activity, R.color.chat_accent));
             holder.binding.projectTypeBadge.setBackgroundResource(R.drawable.bg_chat_status_chip);
             holder.binding.imgIconView.setStrokeColor(ContextCompat.getColor(activity, R.color.chat_accent));

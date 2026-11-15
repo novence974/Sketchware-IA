@@ -6,6 +6,8 @@ import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
+import android.content.res.Resources;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
@@ -22,6 +24,8 @@ import android.widget.TextView;
 import androidx.activity.ComponentActivity;
 import androidx.annotation.NonNull;
 import androidx.annotation.StringRes;
+import androidx.appcompat.app.AppCompatDelegate;
+import androidx.core.os.LocaleListCompat;
 
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
@@ -33,6 +37,7 @@ import java.util.HashMap;
 
 import pro.sketchware.lib.base.BaseTextWatcher;
 import pro.sketchware.utility.FileUtil;
+import pro.sketchware.utility.TranslationFunction;
 
 public class Helper {
     public static final TypeToken<HashMap<String, Object>> TYPE_MAP = new TypeToken<>() {
@@ -77,8 +82,47 @@ public class Helper {
         }
     }
 
+    /**
+     * Resources for the language the user picked.
+     *
+     * <p>Most of the UI reads its text through this class, which resolves against the
+     * application context. On API levels below 33 AppCompat applies a per-app locale by
+     * recreating activities with a wrapped configuration and leaves the application
+     * context on the system locale, so every string fetched here stayed in the default
+     * language however the picker was set. The selected locale is applied explicitly
+     * instead, and the result is cached until the selection changes because this runs on
+     * the order of a thousand times per screen.
+     *
+     * <p>The resources are passed back through {@link TranslationFunction} so externally
+     * provided translations keep overlaying them.
+     */
+    private static volatile String localizedTags;
+    private static volatile Resources localizedResources;
+
+    private static Resources resources() {
+        Context context = getContext();
+        LocaleListCompat selected = AppCompatDelegate.getApplicationLocales();
+        String tags = selected.toLanguageTags();
+        if (tags.isEmpty()) {
+            // Following the system locale: the context already resolves correctly.
+            return context.getResources();
+        }
+        Resources cached = localizedResources;
+        if (cached != null && tags.equals(localizedTags)) {
+            return cached;
+        }
+        Resources base = TranslationFunction.unwrapResources(context.getResources());
+        Configuration configuration = new Configuration(base.getConfiguration());
+        configuration.setLocale(selected.get(0));
+        Resources applied = TranslationFunction.wrapResources(
+                context, context.createConfigurationContext(configuration).getResources());
+        localizedTags = tags;
+        localizedResources = applied;
+        return applied;
+    }
+
     public static String getResString(@StringRes int resId) {
-        return getContext().getString(resId);
+        return resources().getString(resId);
     }
 
     public static String getResString(@StringRes int resId, Object... formatArgs) {

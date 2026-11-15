@@ -34,7 +34,9 @@ android {
         targetSdk = 36
         minSdk = 26
         versionCode = 160
-        versionName = "9.1 Preview"
+        // The build's commit is part of the version so the About screen identifies
+        // exactly which build is installed.
+        versionName = "9.1 Preview ($shortCommitHash)"
 
         buildConfigField("String", "GIT_HASH", "\"${gitCommitHash}\"")
     }
@@ -47,26 +49,39 @@ android {
             keyPassword = "testkey"
         }
         release {
-            // Support env vars for CI (GitHub Actions secrets), fall back to local keystore.
-            // To use in CI, set these GitHub Actions secrets:
-            //   KEYSTORE_BASE64   – base64-encoded sketchware-ia.keystore
-            //   KEY_ALIAS         – sketchware-ia
-            //   KEY_PASSWORD      – keystore key password
-            //   STORE_PASSWORD    – keystore store password
+            // The release key never lives in the repository. CI supplies it through
+            // these GitHub Actions secrets:
+            //   KEYSTORE_BASE64   - base64-encoded release keystore
+            //   KEY_ALIAS         - key alias inside that keystore
+            //   KEY_PASSWORD      - key password
+            //   STORE_PASSWORD    - store password
             def keystoreBase64 = System.getenv("KEYSTORE_BASE64")
-            if (keystoreBase64 != null && !keystoreBase64.isEmpty()) {
-                // Decode keystore from env var at build time
-                def keystoreBytes = java.util.Base64.decoder.decode(keystoreBase64)
+            def releaseStorePassword = System.getenv("STORE_PASSWORD")
+            def releaseKeyAlias = System.getenv("KEY_ALIAS")
+            def releaseKeyPassword = System.getenv("KEY_PASSWORD")
+            def hasReleaseCredentials = keystoreBase64 != null && !keystoreBase64.isEmpty()
+                    && releaseStorePassword != null && !releaseStorePassword.isEmpty()
+                    && releaseKeyAlias != null && !releaseKeyAlias.isEmpty()
+                    && releaseKeyPassword != null && !releaseKeyPassword.isEmpty()
+
+            if (hasReleaseCredentials) {
                 def tmpKeystore = layout.buildDirectory.file("signing/release.keystore").get().asFile
                 tmpKeystore.parentFile.mkdirs()
-                tmpKeystore.bytes = keystoreBytes
+                tmpKeystore.bytes = java.util.Base64.decoder.decode(keystoreBase64)
                 storeFile = tmpKeystore
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
             } else {
-                storeFile = file("../sketchware-ia.keystore")
+                // No credentials in the environment: fall back to the public test
+                // key rather than to a password written into this file, so a build
+                // produced outside CI can never pass for an official release.
+                logger.warn("No release signing credentials found; signing with the public test key.")
+                storeFile = file("../testkey.keystore")
+                storePassword = "testkey"
+                keyAlias = "testkey"
+                keyPassword = "testkey"
             }
-            storePassword = System.getenv("STORE_PASSWORD") ?: "sketchware123"
-            keyAlias     = System.getenv("KEY_ALIAS")      ?: "sketchware-ia"
-            keyPassword  = System.getenv("KEY_PASSWORD")   ?: "sketchware123"
         }
     }
 
@@ -189,10 +204,13 @@ dependencies {
 tasks.register('createMockGoogleServices') {
     doLast {
         if (secrets != null) {
-            new File("$projectDir/google-services.json").text = secrets
+            googleServicesFile.text = secrets
             return
         }
-        def mockFile = file("src/debug/google-services.json")
+        // The plugin searches app/google-services.json for every variant. The
+        // placeholder used to be written into src/debug only, so assembleRelease
+        // failed for anyone building without the real configuration.
+        def mockFile = googleServicesFile
         if (!mockFile.exists()) {
             mockFile.parentFile.mkdirs()
             def mockContent = """{

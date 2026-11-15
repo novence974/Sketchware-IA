@@ -135,7 +135,6 @@ import mod.jbk.diagnostic.MissingFileException;
 import mod.jbk.util.LogUtil;
 import mod.khaled.logcat.LogReaderActivity;
 import pro.sketchware.R;
-import pro.sketchware.utility.AdManager;
 import pro.sketchware.activities.appcompat.ManageAppCompatActivity;
 import pro.sketchware.activities.editor.command.ManageXMLCommandActivity;
 import pro.sketchware.activities.editor.view.CodeViewerActivity;
@@ -655,7 +654,6 @@ public class DesignActivity extends BaseAppCompatActivity implements View.OnClic
             registerReceiver(buildCancelReceiver, filter);
         }
 
-        AdManager.loadBanner(this, findViewById(R.id.ad_container));
     }
 
     private boolean isDebugApkExists() {
@@ -889,7 +887,11 @@ public class DesignActivity extends BaseAppCompatActivity implements View.OnClic
         menu.add(3, 4, 3, R.string.design_relations_center_horizontal).setIcon(R.drawable.ic_mtrl_align_horizontal_center).setEnabled(relations);
         menu.add(3, 5, 4, R.string.design_relations_center_vertical).setIcon(R.drawable.ic_mtrl_align_vertical_center).setEnabled(relations);
         menu.add(3, 6, 5, R.string.design_relations_clear).setIcon(R.drawable.ic_mtrl_link_off).setEnabled(relations);
-        popup.setForceShowIcon(true);
+        // PopupMenu#setForceShowIcon only exists from API 29; minSdk is 26, so an
+        // unguarded call throws NoSuchMethodError on Android 8.0-9.0.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            popup.setForceShowIcon(true);
+        }
         // The button stays highlighted while the canvas is in Blueprint mode.
 
         popup.setOnDismissListener(m -> btnCanvasTools.setChecked(editor.isBlueprint()));

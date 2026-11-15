@@ -41,7 +41,6 @@ import pro.sketchware.editor.EditorViewUtils;
 import pro.sketchware.workspace.WorkspacePathManager;
 import pro.sketchware.workspace.ProjectFilesFragment;
 import pro.sketchware.R;
-import pro.sketchware.utility.AdManager;
 import pro.sketchware.utility.TranslationFunction;
 
 public class ManageViewActivity extends BaseAppCompatActivity implements OnClickListener, ViewPager.OnPageChangeListener {
@@ -316,7 +315,6 @@ public class ManageViewActivity extends BaseAppCompatActivity implements OnClick
         s = findViewById(R.id.fab);
         s.setOnClickListener(this);
 
-        AdManager.loadBanner(this, findViewById(R.id.ad_container));
     }
 
     @Override

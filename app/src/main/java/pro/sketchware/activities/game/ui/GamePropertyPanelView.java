@@ -490,6 +490,39 @@ public class GamePropertyPanelView extends LinearLayout {
                     notifySceneChanged(false);
                 });
 
+        addToggleCard(R.drawable.ic_mtrl_rotate, "Flip X", selected.flipX ? "Mirrored" : "Normal", selected.flipX,
+                v -> {
+                    pushUndo();
+                    selected.flipX = !selected.flipX;
+                    notifySceneChanged(false);
+                });
+
+        addToggleCard(R.drawable.ic_mtrl_rotate, "Flip Y", selected.flipY ? "Mirrored" : "Normal", selected.flipY,
+                v -> {
+                    pushUndo();
+                    selected.flipY = !selected.flipY;
+                    notifySceneChanged(false);
+                });
+
+        addPropertyCard(R.drawable.ic_mtrl_target, "Pivot",
+                String.format(Locale.US, "%.2f, %.2f", selected.pivotX, selected.pivotY), 0,
+                v -> showPivotDialog());
+
+        addPropertyCard(R.drawable.ic_mtrl_group, "Group / Parent",
+                selected.parentId == null || selected.parentId.isEmpty()
+                        ? "Top level" : parentDisplayName(selected.parentId), 0,
+                v -> showParentDialog());
+
+        addPropertyCard(R.drawable.ic_mtrl_list, "Custom Data",
+                customPropsSummary(selected.customProps), 0,
+                v -> showTextInputDialog("Custom Data",
+                        selected.customProps == null ? "" : selected.customProps,
+                        "key=value; other=12", value -> {
+                            pushUndo();
+                            selected.customProps = value.trim();
+                            notifySceneChanged(false);
+                        }));
+
         addActionCard(R.drawable.ic_mtrl_content_copy, "Duplicate", false, v -> duplicateSelectedObject());
     }
 
@@ -522,6 +555,30 @@ public class GamePropertyPanelView extends LinearLayout {
         String gravityLabel = "g=" + formatFloat(selected.gravityScale) + " • q=" + formatFloat(selected.bounce);
         addPropertyCard(R.drawable.ic_mtrl_box, "Body / Friction", gravityLabel, 0,
                 v -> showPhysicsDialog());
+
+        String colliderLabel = (selected.colliderScaleX == 1f && selected.colliderScaleY == 1f
+                && selected.colliderOffsetX == 0f && selected.colliderOffsetY == 0f)
+                ? "Matches bounds"
+                : String.format(Locale.US, "%.0f×%.0f @ %+.0f,%+.0f",
+                        selected.colliderWidth(), selected.colliderHeight(),
+                        selected.colliderOffsetX, selected.colliderOffsetY);
+        addPropertyCard(R.drawable.ic_mtrl_sensor, "Collider", colliderLabel, 0,
+                v -> showColliderDialog());
+
+        addPropertyCard(R.drawable.ic_kelivo_layers, "Collision Layers",
+                String.format(Locale.US, "L%d • %s", selected.collisionLayer, maskSummary(selected.collisionMask)), 0,
+                v -> showLayersDialog());
+
+        String dynamicsLabel = "m=" + formatFloat(selected.mass)
+                + " • drag=" + formatFloat(selected.linearDamping)
+                + (selected.maxSpeed > 0f ? " • max=" + formatFloat(selected.maxSpeed) : "");
+        addPropertyCard(R.drawable.ic_mtrl_tune, "Body Dynamics", dynamicsLabel, 0,
+                v -> showBodyDynamicsDialog());
+
+        addPropertyCard(R.drawable.ic_kelivo_heart_filled, "Health",
+                selected.maxHealth <= 0f ? "Disabled"
+                        : String.format(Locale.US, "%.0f / %.0f", selected.health, selected.maxHealth), 0,
+                v -> showHealthDialog());
     }
 
     private void buildObjectEventCards() {
@@ -949,6 +1006,325 @@ public class GamePropertyPanelView extends LinearLayout {
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    // ------------------------------------------------------------------
+    // Expanded 2D object properties
+    // ------------------------------------------------------------------
+
+    private static int parseIntOr(String s, int fallback) {
+        try {
+            return Integer.parseInt(s.trim());
+        } catch (NumberFormatException invalid) {
+            return fallback;
+        }
+    }
+
+    /** "All layers", "none", or the list of layer indices in the mask. */
+    private static String maskSummary(int mask) {
+        if (mask == -1) {
+            return "All layers";
+        }
+        if (mask == 0) {
+            return "None";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 32; i++) {
+            if ((mask & (1 << i)) != 0) {
+                if (sb.length() > 0) sb.append(',');
+                sb.append(i);
+            }
+        }
+        return sb.toString();
+    }
+
+    private static String maskToField(int mask) {
+        return mask == -1 ? "all" : maskSummary(mask);
+    }
+
+    private static int fieldToMask(String text, int fallback) {
+        if (text == null) return fallback;
+        String t = text.trim().toLowerCase(Locale.US);
+        if (t.isEmpty() || t.equals("all") || t.equals("*")) {
+            return -1;
+        }
+        if (t.equals("none")) {
+            // A literal 0 would be normalised back to "all" on load, so an
+            // object that must collide with nothing gets its own layer only.
+            return 0;
+        }
+        int mask = 0;
+        for (String part : t.split("[,\\s]+")) {
+            if (part.isEmpty()) continue;
+            int bit = parseIntOr(part, -1);
+            if (bit >= 0 && bit <= 31) {
+                mask |= (1 << bit);
+            }
+        }
+        return mask == 0 ? fallback : mask;
+    }
+
+    private static String customPropsSummary(String props) {
+        if (props == null || props.trim().isEmpty()) {
+            return "None";
+        }
+        int count = 0;
+        for (String pair : props.split(";")) {
+            if (pair.indexOf('=') > 0) count++;
+        }
+        return count == 0 ? "None" : (count == 1 ? "1 entry" : count + " entries");
+    }
+
+    private String parentDisplayName(String parentId) {
+        if (scene != null && scene.objects != null) {
+            for (GameObjectBean obj : scene.objects) {
+                if (obj.id != null && obj.id.equals(parentId)) {
+                    return nonEmpty(obj.name, obj.id);
+                }
+            }
+        }
+        return "Missing object";
+    }
+
+    private void showPivotDialog() {
+        Context context = getContext();
+        LinearLayout box = createDialogContainer(context);
+
+        TextView hint = new TextView(context);
+        hint.setText("0,0 is the top-left corner, 0.5,0.5 the centre, 0.5,1 the feet. "
+                + "Rotation and scale turn around this point.");
+        hint.setTextColor(colorOnSurfaceVariant);
+        box.addView(hint);
+
+        int numeric = InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL;
+        EditText etX = createStyledEditText(context, formatFloat(selected.pivotX), "0..1", numeric);
+        EditText etY = createStyledEditText(context, formatFloat(selected.pivotY), "0..1", numeric);
+        box.addView(labeledField(context, "Pivot X (0..1)", etX));
+        box.addView(labeledField(context, "Pivot Y (0..1)", etY));
+
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("Pivot")
+                .setView(box)
+                .setNeutralButton("Centre", (d, w) -> {
+                    pushUndo();
+                    selected.pivotX = 0.5f;
+                    selected.pivotY = 0.5f;
+                    notifySceneChanged(false);
+                })
+                .setPositiveButton("Apply", (d, w) -> {
+                    pushUndo();
+                    selected.pivotX = Math.max(0f, Math.min(1f, parseFloatOr(etX.getText().toString(), selected.pivotX)));
+                    selected.pivotY = Math.max(0f, Math.min(1f, parseFloatOr(etY.getText().toString(), selected.pivotY)));
+                    notifySceneChanged(false);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showColliderDialog() {
+        Context context = getContext();
+        LinearLayout box = createDialogContainer(context);
+
+        TextView hint = new TextView(context);
+        hint.setText("The hitbox, independent of the drawing. Scale 1 matches the bounds; "
+                + "shrink it so a sprite with empty margins does not collide on its transparent edges.");
+        hint.setTextColor(colorOnSurfaceVariant);
+        box.addView(hint);
+
+        int signed = InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL | InputType.TYPE_NUMBER_FLAG_SIGNED;
+        int numeric = InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL;
+        EditText etSx = createStyledEditText(context, formatFloat(selected.colliderScaleX), "1.0", numeric);
+        EditText etSy = createStyledEditText(context, formatFloat(selected.colliderScaleY), "1.0", numeric);
+        EditText etOx = createStyledEditText(context, formatFloat(selected.colliderOffsetX), "0", signed);
+        EditText etOy = createStyledEditText(context, formatFloat(selected.colliderOffsetY), "0", signed);
+        box.addView(labeledField(context, "Width scale", etSx));
+        box.addView(labeledField(context, "Height scale", etSy));
+        box.addView(labeledField(context, "Offset X (px)", etOx));
+        box.addView(labeledField(context, "Offset Y (px)", etOy));
+
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("Collider")
+                .setView(box)
+                .setNeutralButton("Match bounds", (d, w) -> {
+                    pushUndo();
+                    selected.colliderScaleX = 1f;
+                    selected.colliderScaleY = 1f;
+                    selected.colliderOffsetX = 0f;
+                    selected.colliderOffsetY = 0f;
+                    notifySceneChanged(false);
+                })
+                .setPositiveButton("Apply", (d, w) -> {
+                    pushUndo();
+                    selected.colliderScaleX = Math.max(0.05f, parseFloatOr(etSx.getText().toString(), 1f));
+                    selected.colliderScaleY = Math.max(0.05f, parseFloatOr(etSy.getText().toString(), 1f));
+                    selected.colliderOffsetX = parseFloatOr(etOx.getText().toString(), 0f);
+                    selected.colliderOffsetY = parseFloatOr(etOy.getText().toString(), 0f);
+                    notifySceneChanged(false);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showLayersDialog() {
+        Context context = getContext();
+        LinearLayout box = createDialogContainer(context);
+
+        TextView hint = new TextView(context);
+        hint.setText("Two bodies only collide when each one's mask contains the other's layer. "
+                + "Use \"all\", or a list like \"0,2,3\".");
+        hint.setTextColor(colorOnSurfaceVariant);
+        box.addView(hint);
+
+        EditText etLayer = createStyledEditText(context, String.valueOf(selected.collisionLayer),
+                "0..31", InputType.TYPE_CLASS_NUMBER);
+        EditText etMask = createStyledEditText(context, maskToField(selected.collisionMask),
+                "all", InputType.TYPE_CLASS_TEXT);
+        box.addView(labeledField(context, "Layer (0..31)", etLayer));
+        box.addView(labeledField(context, "Collides with", etMask));
+
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("Collision Layers")
+                .setView(box)
+                .setPositiveButton("Apply", (d, w) -> {
+                    pushUndo();
+                    int layer = parseIntOr(etLayer.getText().toString(), selected.collisionLayer);
+                    selected.collisionLayer = Math.max(0, Math.min(31, layer));
+                    selected.collisionMask = fieldToMask(etMask.getText().toString(), selected.collisionMask);
+                    notifySceneChanged(false);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showBodyDynamicsDialog() {
+        Context context = getContext();
+        LinearLayout box = createDialogContainer(context);
+
+        TextView hint = new TextView(context);
+        hint.setText("Drag sheds that fraction of the speed every second. "
+                + "Max speed 0 leaves the body uncapped.");
+        hint.setTextColor(colorOnSurfaceVariant);
+        box.addView(hint);
+
+        int numeric = InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL;
+        EditText etMass = createStyledEditText(context, formatFloat(selected.mass), "1.0", numeric);
+        EditText etDrag = createStyledEditText(context, formatFloat(selected.linearDamping), "0", numeric);
+        EditText etMax = createStyledEditText(context, formatFloat(selected.maxSpeed), "0 = unlimited", numeric);
+        box.addView(labeledField(context, "Mass", etMass));
+        box.addView(labeledField(context, "Drag (per second)", etDrag));
+        box.addView(labeledField(context, "Max speed (px/s)", etMax));
+
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("Body Dynamics")
+                .setView(box)
+                .setPositiveButton("Apply", (d, w) -> {
+                    pushUndo();
+                    selected.mass = Math.max(0.01f, parseFloatOr(etMass.getText().toString(), 1f));
+                    selected.linearDamping = Math.max(0f, parseFloatOr(etDrag.getText().toString(), 0f));
+                    selected.maxSpeed = Math.max(0f, parseFloatOr(etMax.getText().toString(), 0f));
+                    notifySceneChanged(false);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showHealthDialog() {
+        Context context = getContext();
+        LinearLayout box = createDialogContainer(context);
+
+        TextView hint = new TextView(context);
+        hint.setText("Max health 0 turns the system off. Hazards spend health; at zero the object "
+                + "respawns at its checkpoint. The value is published to the variables "
+                + "\"<name>_health\", and to \"health\" when the object is tagged player.");
+        hint.setTextColor(colorOnSurfaceVariant);
+        box.addView(hint);
+
+        int numeric = InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL;
+        EditText etMax = createStyledEditText(context, formatFloat(selected.maxHealth), "0 = disabled", numeric);
+        EditText etInv = createStyledEditText(context, formatFloat(selected.invincibleSec), "0.8", numeric);
+        box.addView(labeledField(context, "Max health", etMax));
+        box.addView(labeledField(context, "Invincibility (s)", etInv));
+
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("Health")
+                .setView(box)
+                .setPositiveButton("Apply", (d, w) -> {
+                    pushUndo();
+                    selected.maxHealth = Math.max(0f, parseFloatOr(etMax.getText().toString(), 0f));
+                    selected.health = selected.maxHealth;
+                    selected.invincibleSec = Math.max(0f, parseFloatOr(etInv.getText().toString(), 0.8f));
+                    notifySceneChanged(false);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showParentDialog() {
+        Context context = getContext();
+        ArrayList<String> ids = new ArrayList<>();
+        ArrayList<String> labels = new ArrayList<>();
+        ids.add("");
+        labels.add("Top level (no parent)");
+        if (scene != null && scene.objects != null) {
+            for (GameObjectBean obj : scene.objects) {
+                // An object cannot parent itself; deeper cycles are rejected
+                // when the parent is applied.
+                if (obj == selected || obj.id == null || obj.id.isEmpty()) {
+                    continue;
+                }
+                ids.add(obj.id);
+                labels.add(nonEmpty(obj.name, obj.id));
+            }
+        }
+        int checked = Math.max(0, ids.indexOf(selected.parentId == null ? "" : selected.parentId));
+
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("Group under")
+                .setSingleChoiceItems(labels.toArray(new CharSequence[0]), checked, (d, which) -> {
+                    d.dismiss();
+                    String picked = ids.get(which);
+                    if (createsParentCycle(selected.id, picked)) {
+                        android.widget.Toast.makeText(context,
+                                "That would make a loop of parents", android.widget.Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    pushUndo();
+                    selected.parentId = picked;
+                    notifySceneChanged(false);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** Walks up from {@code parentId} looking for {@code childId}. */
+    private boolean createsParentCycle(String childId, String parentId) {
+        if (childId == null || parentId == null || parentId.isEmpty()) {
+            return false;
+        }
+        if (childId.equals(parentId)) {
+            return true;
+        }
+        if (scene == null || scene.objects == null) {
+            return false;
+        }
+        String cursor = parentId;
+        for (int guard = 0; guard < 64 && cursor != null && !cursor.isEmpty(); guard++) {
+            String next = null;
+            for (GameObjectBean obj : scene.objects) {
+                if (cursor.equals(obj.id)) {
+                    next = obj.parentId;
+                    break;
+                }
+            }
+            if (next == null || next.isEmpty()) {
+                return false;
+            }
+            if (next.equals(childId)) {
+                return true;
+            }
+            cursor = next;
+        }
+        return false;
     }
 
     private void showZIndexDialog() {

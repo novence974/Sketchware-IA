@@ -31,7 +31,6 @@ import pro.sketchware.workspace.RecentProjectsRegistry;
 import mod.hey.studios.project.ProjectTracker;
 import mod.hey.studios.project.backup.BackupFactory;
 import pro.sketchware.R;
-import pro.sketchware.utility.AdManager;
 import pro.sketchware.activities.main.MainSearchable;
 import pro.sketchware.activities.studio.AndroidStudioProjectActivity;
 
@@ -45,7 +44,6 @@ public class ProjectsStoreFragment extends Fragment implements MainSearchable {
     private TextView empty;
     private boolean studio;
     private boolean importing;
-    private boolean waitingForAd;
     private String query = "";
 
     @Override
@@ -159,7 +157,7 @@ public class ProjectsStoreFragment extends Fragment implements MainSearchable {
         }
     }
     private void showDetails(String title, String asset, boolean androidStudio) {
-        if (importing || waitingForAd) return;
+        if (importing) return;
         var context = requireContext();
         var icon = AppCompatResources.getDrawable(context, R.drawable.ic_mtrl_circle_play).mutate();
         icon.setTint(context.getColor(R.color.chat_accent));
@@ -174,29 +172,13 @@ public class ProjectsStoreFragment extends Fragment implements MainSearchable {
                 .setTitle(title)
                 .setMessage(getString(R.string.template_unlock_message, format))
                 .setNegativeButton(android.R.string.cancel, null)
-                .setPositiveButton(R.string.template_watch_video,
-                        (dialog, which) -> unlockModel(asset, androidStudio))
+                .setPositiveButton(R.string.common_word_import,
+                        (dialog, which) -> importModel(asset, androidStudio))
                 .show();
     }
 
-    private void unlockModel(String asset, boolean androidStudio) {
-        if (importing || waitingForAd) return;
-        waitingForAd = true;
-        AdManager.showTemplateReward(requireActivity(), completed -> {
-            waitingForAd = false;
-            if (!isAdded() || getView() == null || requireActivity().isFinishing()) return;
-            if (completed) {
-                importModel(asset, androidStudio);
-            } else {
-                new AlertDialog.Builder(requireContext())
-                        .setMessage("O vídeo não foi concluído. Tente novamente para usar o modelo.")
-                        .setPositiveButton(android.R.string.ok, null)
-                        .show();
-            }
-        });
-    }
     private void importModel(String asset, boolean androidStudio) {
-        if (importing || waitingForAd) return;
+        if (importing) return;
         importing = true;
         var activity = requireActivity();
         var context = activity.getApplicationContext();

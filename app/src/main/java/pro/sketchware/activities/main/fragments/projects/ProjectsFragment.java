@@ -49,7 +49,6 @@ import pro.sketchware.activities.game.GameEngineActivity;
 import pro.sketchware.activities.main.activities.MainActivity;
 import pro.sketchware.databinding.MyprojectsBinding;
 import pro.sketchware.databinding.SortProjectDialogBinding;
-import pro.sketchware.utility.AdManager;
 import pro.sketchware.utility.UI;
 
 public class ProjectsFragment extends StoragePermissionFragment implements pro.sketchware.activities.main.MainSearchable {
@@ -66,6 +65,8 @@ public class ProjectsFragment extends StoragePermissionFragment implements pro.s
                     String projectKind = data.getStringExtra(MyProjectSettingActivity.EXTRA_PROJECT_KIND);
                     if (RecentProjectsRegistry.PROJECT_KIND_GAME_2D.equals(projectKind)) {
                         toGameEngineActivity(sc_id);
+                    } else if (RecentProjectsRegistry.PROJECT_KIND_GAME_3D.equals(projectKind)) {
+                        toGame3DEditorActivity(sc_id);
                     } else if (!RecentProjectsRegistry.PROJECT_KIND_ANDROID_STUDIO.equals(projectKind)) {
                         toDesignActivity(sc_id);
                     }
@@ -109,6 +110,15 @@ public class ProjectsFragment extends StoragePermissionFragment implements pro.s
         ProjectTracker.setScId(sc_id);
         DesignActivity.sc_id = sc_id;
         intent.putExtra("sc_id", sc_id);
+        intent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        requireActivity().startActivity(intent);
+    }
+
+    public void toGame3DEditorActivity(String sc_id) {
+        ProjectTracker.setScId(sc_id);
+        DesignActivity.sc_id = sc_id;
+        Intent intent = pro.sketchware.activities.game3d.ui.Game3DEditorActivity
+                .intentFor(requireContext(), sc_id);
         intent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
         requireActivity().startActivity(intent);
     }
@@ -229,9 +239,6 @@ public class ProjectsFragment extends StoragePermissionFragment implements pro.s
 
         requireActivity().addMenuProvider(menuProvider, getViewLifecycleOwner(), androidx.lifecycle.Lifecycle.State.RESUMED);
 
-        if (getActivity() != null) {
-            AdManager.loadBanner(requireActivity(), binding.adContainer);
-        }
     }
 
     private void showNewProjectTypeDialog() {
@@ -254,6 +261,13 @@ public class ProjectsFragment extends StoragePermissionFragment implements pro.s
             game2dCard.setOnClickListener(v -> {
                 dialog.dismiss();
                 toProjectSettingsActivity(RecentProjectsRegistry.PROJECT_KIND_GAME_2D);
+            });
+        }
+        View game3dCard = dialogView.findViewById(R.id.project_type_game_3d);
+        if (game3dCard != null) {
+            game3dCard.setOnClickListener(v -> {
+                dialog.dismiss();
+                toProjectSettingsActivity(RecentProjectsRegistry.PROJECT_KIND_GAME_3D);
             });
         }
         dialog.show();

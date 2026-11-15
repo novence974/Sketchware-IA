@@ -45,8 +45,10 @@ public class AddCustomViewActivity extends BaseDialogActivity implements View.On
         TextView description = findViewById(R.id.tv_desc);
         description.setText(Helper.getResString(R.string.design_manager_view_description_guide_use_custom_view));
         viewNameValidator = new ViewNameValidator(this, findViewById(R.id.ti_input), ComponentNameRegistry.b, alreadyInUseNames);
-        super.r.setOnClickListener(this);
-        super.s.setOnClickListener(this);
+        // Inherited public fields of BaseDialogActivity; qualifying them with
+        // `super.` made lint read this as a second super.onCreate() call.
+        r.setOnClickListener(this);
+        s.setOnClickListener(this);
     }
 
     @SuppressLint("MissingSuperCall")

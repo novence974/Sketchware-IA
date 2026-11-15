@@ -59,7 +59,6 @@ import pro.sketchware.control.VersionDialog;
 import pro.sketchware.databinding.MyprojectSettingBinding;
 import pro.sketchware.lib.validator.AppNameValidator;
 import pro.sketchware.lib.validator.PackageNameValidator;
-import pro.sketchware.utility.AdManager;
 import pro.sketchware.utility.FileUtil;
 import pro.sketchware.utility.SketchwareUtil;
 import pro.sketchware.utility.TranslationFunction;
@@ -204,7 +203,8 @@ public class MyProjectSettingActivity extends BaseAppCompatActivity implements V
             if (isAndroidStudioProject()) {
                 binding.toolbar.setTitle("New Android Studio Project");
             } else if (isGameProject()) {
-                binding.toolbar.setTitle(R.string.project_type_game_2d);
+                binding.toolbar.setTitle(isGame3DProject()
+                        ? R.string.project_type_game_3d : R.string.project_type_game_2d);
             }
             originalPackageName = newProjectPackageName;
             binding.etPackageName.setText(newProjectPackageName);
@@ -230,7 +230,6 @@ public class MyProjectSettingActivity extends BaseAppCompatActivity implements V
         }
         applyPackageNameLockIfNeeded();
         syncThemeColors();
-        AdManager.loadBanner(this, binding.adContainer);
     }
 
     @Override
@@ -626,11 +625,19 @@ public class MyProjectSettingActivity extends BaseAppCompatActivity implements V
         if (RecentProjectsRegistry.PROJECT_KIND_GAME_2D.equals(value)) {
             return RecentProjectsRegistry.PROJECT_KIND_GAME_2D;
         }
+        if (RecentProjectsRegistry.PROJECT_KIND_GAME_3D.equals(value)) {
+            return RecentProjectsRegistry.PROJECT_KIND_GAME_3D;
+        }
         return RecentProjectsRegistry.PROJECT_KIND_SKETCHWARE;
     }
 
     private boolean isGameProject() {
-        return RecentProjectsRegistry.PROJECT_KIND_GAME_2D.equals(projectKind);
+        return RecentProjectsRegistry.PROJECT_KIND_GAME_2D.equals(projectKind)
+                || RecentProjectsRegistry.PROJECT_KIND_GAME_3D.equals(projectKind);
+    }
+
+    private boolean isGame3DProject() {
+        return RecentProjectsRegistry.PROJECT_KIND_GAME_3D.equals(projectKind);
     }
 
     private boolean isAndroidStudioProject() {

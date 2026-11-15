@@ -1,0 +1,104 @@
+name: Build installable APK
+
+on:
+  # workflow_dispatch only works from the default branch, so pushing any commit
+  # to build/apk is the way to ask for a build from a branch that is not merged.
+  push:
+    branches: ["build/apk"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish the APK under"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and publish APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Pass google-services.json through when configured
+        shell: bash
+        env:
+          JSON_CONTENT: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        if: ${{ env.JSON_CONTENT != '' }}
+        run: printf 'GOOGLE_SERVICES_JSON<<EOF\n%s\nEOF\n' "$JSON_CONTENT" >> $GITHUB_ENV
+
+      - name: Build debug APK
+        env:
+          SKETCHUB_API_KEY: ${{ secrets.SKETCHUB_API_KEY }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # gradle.properties wins over GRADLE_OPTS, so the CI-only limits are
+          # written into it: L8 needs more heap than the desktop default of
+          # 2.5 GB, and D8 overflows the default 1 MB thread stack on this
+          # project. The desktop defaults are deliberately left alone in git.
+          sed -i 's|^org\.gradle\.jvmargs=.*|org.gradle.jvmargs=-Xmx5g -Xss32m -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8 -XX:+UseParallelGC|' gradle.properties
+          grep '^org\.gradle\.jvmargs=' gradle.properties
+          chmod +x ./gradlew
+          # assembleRelease currently dies in D8 with a StackOverflowError on the
+          # source-generator classes (deeply nested string concatenation that
+          # javac cannot fold because the package name is a variable). Raising
+          # the stack to 32m does not clear it, so the installable build is the
+          # debug variant until those generators are rewritten with StringBuilder.
+          ./gradlew --no-daemon --max-workers=1 assembleDebug
+
+      - name: Collect the APK and report who signed it
+        id: collect
+        run: |
+          set -euo pipefail
+          apk=$(find app/build/outputs/apk/debug -name '*.apk' | head -1)
+          test -n "$apk"
+          short=$(git rev-parse --short HEAD)
+          out="sketchware-ia-${short}.apk"
+          cp "$apk" "$out"
+          echo "apk=$out" >> "$GITHUB_OUTPUT"
+          echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          echo "short=$short" >> "$GITHUB_OUTPUT"
+          # apksigner ships with the build-tools the AGP run already downloaded.
+          signer=$(find "$ANDROID_HOME"/build-tools -name apksigner | sort | tail -1)
+          "$signer" verify --print-certs "$out" | tee certs.txt
+          echo "size=$(du -h "$out" | cut -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the APK as a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.collect.outputs.tag }}"
+          if [ -z "$tag" ]; then tag="build-${{ steps.collect.outputs.short }}"; fi
+          {
+            echo "APK مبني من \`${{ github.ref_name }}\` عند \`${{ steps.collect.outputs.short }}\`."
+            echo
+            echo "الحجم: ${{ steps.collect.outputs.size }}"
+            echo
+            echo '## بصمة التوقيع'
+            echo
+            echo '```'
+            grep -i 'SHA-256' certs.txt || cat certs.txt
+            echo '```'
+            echo
+            echo "إن ظهرت بصمة مفتاح الاختبار فأسرار التوقيع غير مضبوطة بعد."
+          } > notes.md
+          gh release create "$tag" "${{ steps.collect.outputs.apk }}" \
+            --title "Sketchware-IA $tag" --notes-file notes.md
+          gh release view "$tag" --json url -q .url

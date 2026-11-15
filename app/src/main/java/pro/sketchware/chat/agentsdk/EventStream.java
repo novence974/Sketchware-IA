@@ -2,8 +2,10 @@ package pro.sketchware.chat.agentsdk;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -69,6 +71,44 @@ public final class EventStream {
                 }
             }
         });
+    }
+
+    /**
+     * Blocks until every event emitted <em>before this call</em> has been
+     * handed to all subscribers, or until the timeout elapses.
+     *
+     * <p>{@link #emit(AgentEvent)} is asynchronous: it queues delivery on this
+     * stream's executor and returns. A host that finishes a synchronous run
+     * and immediately reads state built from events would therefore observe a
+     * half-delivered run. Because the default executor is single-threaded and
+     * preserves emission order, a barrier task queued now runs strictly after
+     * all events queued earlier — so when it completes, delivery has caught
+     * up.</p>
+     *
+     * @param timeoutMillis how long to wait; values &lt;= 0 mean "do not wait"
+     * @return true when delivery caught up, false on timeout, interruption or
+     *         a rejected barrier (a shut-down executor)
+     */
+    public boolean drain(long timeoutMillis) {
+        if (subscribers.isEmpty()) {
+            return true;
+        }
+        CountDownLatch barrier = new CountDownLatch(1);
+        try {
+            executor.execute(barrier::countDown);
+        } catch (RuntimeException rejected) {
+            // Executor shut down (closed stream): nothing left to deliver.
+            return false;
+        }
+        if (timeoutMillis <= 0) {
+            return barrier.getCount() == 0;
+        }
+        try {
+            return barrier.await(timeoutMillis, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     private void replayTo(Consumer<AgentEvent> subscriber) {

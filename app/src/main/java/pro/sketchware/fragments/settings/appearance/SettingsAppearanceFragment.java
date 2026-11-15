@@ -11,9 +11,12 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
+import pro.sketchware.R;
 import pro.sketchware.editor.BaseEditorFragment;
 import pro.sketchware.databinding.FragmentSettingsAppearanceBinding;
+import pro.sketchware.utility.LocaleManager;
 import pro.sketchware.utility.theme.ThemeManager;
 
 public class SettingsAppearanceFragment extends BaseEditorFragment {
@@ -31,6 +34,7 @@ public class SettingsAppearanceFragment extends BaseEditorFragment {
         super.onViewCreated(view, savedInstanceState);
         setupToolbar();
         initializeThemeSettings();
+        initializeLanguageSettings();
         setupClickListeners();
 
         {
@@ -140,6 +144,52 @@ public class SettingsAppearanceFragment extends BaseEditorFragment {
         float alpha = enabled ? 1.0f : 0.5f;
         binding.themeLight.animate().alpha(alpha).start();
         binding.themeDark.animate().alpha(alpha).start();
+    }
+
+    private void initializeLanguageSettings() {
+        updateLanguageSummary();
+        binding.languageCard.setOnClickListener(v -> showLanguagePicker());
+    }
+
+    private void updateLanguageSummary() {
+        binding.languageValue.setText(
+                LocaleManager.displayName(requireContext(), LocaleManager.currentTag()));
+    }
+
+    /**
+     * Offers the system default plus every shipped language, each written in
+     * its own language. Picking one recreates the activity through AppCompat,
+     * so there is nothing to restart here.
+     */
+    private void showLanguagePicker() {
+        String[] tags = LocaleManager.supportedTags();
+        CharSequence[] labels = new CharSequence[tags.length + 1];
+        labels[0] = getString(R.string.settings_language_system);
+        for (int i = 0; i < tags.length; i++) {
+            labels[i + 1] = LocaleManager.displayName(requireContext(), tags[i]);
+        }
+
+        String current = LocaleManager.currentTag();
+        int checked = LocaleManager.selectedIndex(current);
+
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.settings_language_dialog_title)
+                .setSingleChoiceItems(labels, checked, (dialog, which) -> {
+                    dialog.dismiss();
+                    String picked = LocaleManager.tagAt(which);
+                    if (picked.equals(current)) {
+                        return;
+                    }
+                    // Summary first: on API 33+ the activity is not always
+                    // recreated synchronously, so the row would otherwise keep
+                    // showing the previous language until the user came back.
+                    LocaleManager.apply(picked);
+                    if (binding != null) {
+                        updateLanguageSummary();
+                    }
+                })
+                .setNegativeButton(R.string.common_word_cancel, null)
+                .show();
     }
 
     @Override

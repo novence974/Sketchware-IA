@@ -551,6 +551,8 @@ public class AgentManager {
         private final java.util.concurrent.Executor uiExecutor;
         private final pro.sketchware.chat.agentsdk.EventStream eventStream;
         private final AutoCloseable eventSubscription;
+        /** Upper bound on waiting for a finished run's events to render. */
+        private static final long EVENT_DRAIN_TIMEOUT_MS = 2_000L;
 
         // ---- Run presentation state, driven ONLY by structured events ----
         // (items 8/9/35/37: the UI never infers tool/completion state from text;
@@ -559,12 +561,17 @@ public class AgentManager {
         private java.util.List<ChatMessage> messages;
         /** Removes an empty placeholder from the conversation on fatal errors. */
         private final java.util.function.Consumer<ChatMessage> placeholderRemover;
-        private ChatMessage liveAssistant;
+        // These are written by the caller thread (beginRunPresentation /
+        // finalizeRunPresentation) and by the EventStream delivery thread
+        // (onAgentEvent), so they must be safe for concurrent access: a run
+        // that starts while the previous run's events are still draining used
+        // to race on a plain LinkedHashMap.
+        private volatile ChatMessage liveAssistant;
         private final StringBuilder liveText = new StringBuilder();
         private final StringBuilder liveReasoning = new StringBuilder();
         private final java.util.Map<String, ChatMessage> toolBubbles =
-                new java.util.LinkedHashMap<>();
-        private String pendingApprovalRequestId = "";
+                new java.util.concurrent.ConcurrentHashMap<>();
+        private volatile String pendingApprovalRequestId = "";
         private volatile String lastOutput = "";
         private volatile String lastStatus = "";
         /** Single reducer: every run event derives the composer status. */
@@ -660,6 +667,7 @@ public class AgentManager {
                     : java.util.Collections.singletonList(userMsg);
             pro.sketchware.chat.agentsdk.RunResult result =
                     runtime.run(agentSupplier.get(), history, scId);
+            awaitEventDelivery();
             finalizeRunPresentation(result);
             return result;
         }
@@ -670,8 +678,27 @@ public class AgentManager {
             beginRunPresentation();
             pro.sketchware.chat.agentsdk.RunResult result =
                     runtime.run(agentSupplier.get(), history, scId);
+            awaitEventDelivery();
             finalizeRunPresentation(result);
             return result;
+        }
+
+        /**
+         * Lets the run's own events finish rendering before the run is
+         * finalised.
+         *
+         * <p>{@code runtime.run(...)} is synchronous but its events are
+         * delivered on the EventStream thread, so without this barrier the
+         * tool bubbles of the turn could still be in flight while the final
+         * assistant message is published — the UI would show the answer before
+         * the tool activity that produced it, and a host reading state right
+         * after the call (and the next {@code beginRunPresentation()}) would
+         * race with the tail of this run.</p>
+         */
+        private void awaitEventDelivery() {
+            if (eventStream != null) {
+                eventStream.drain(EVENT_DRAIN_TIMEOUT_MS);
+            }
         }
 
         /** Final assistant text of the most recent run (empty on failure). */
